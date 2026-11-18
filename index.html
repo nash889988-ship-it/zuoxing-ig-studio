@@ -21,7 +21,12 @@
 <label>主題名稱<input id="topicInput" placeholder="例：閱讀話題｜我的黑道姑姑：教我的99件事"/></label>
 <label>主題內容類型<select id="contentTypeInput"><option value="knowledge">知識整理型</option><option value="book_review">閱讀心得型</option><option value="travel">旅遊攻略型</option><option value="story">故事敘事型</option></select></label>
 <label>主題故事內容／背景資料<textarea id="detailsInput" rows="5" placeholder="貼入官方書籍介紹、可靠摘要、真實體驗或重要背景。AI 必須以你提供的內容為主，不會只依標題編故事。"></textarea></label>
-<div class="reader-fetch-bar"><button type="button" class="primary" id="fetchReaderBtn">↻ 自動搜尋並填寫三個欄位</button><span id="readerFetchStatus">選擇書籍後可自動整理公開來源</span></div><div id="readerResults" class="reader-results" hidden></div><label>重要素材／必須涵蓋的重點 <span class="hint-inline">自動填寫＋可編輯，每行一項</span><textarea id="materialsInput" rows="4" placeholder="例如：書籍核心觀點、人物關係、章節摘要、旅遊交通、注意事項…"></textarea></label>
+<div class="reader-fetch-bar"><button type="button" class="primary" id="fetchReaderBtn">↻ 自動搜尋並填寫三個欄位</button><span id="readerFetchStatus">選擇書籍後可自動整理公開來源</span></div><div id="readerResults" class="reader-results" hidden></div>
+<div class="article-choice-panel">
+ <label>選擇要提要的公開文章網址<input id="selectedArticleUrl" type="url" placeholder="從搜尋結果選取文章，或貼入可公開閱讀的 https:// 文章網址"/></label>
+ <button id="extractArticleBtn" type="button" class="primary">✦ 讀取這篇文章並自動填寫三個欄位</button>
+ <p id="articleExtractStatus" class="fineprint" aria-live="polite">必須取得所選文章的實際正文，才會自動整理；無法讀取就不填入虛構內容。文章正文將透過 Render 傳給 OpenAI API 產生摘要，可能收取 API 費用。</p>
+</div><label>重要素材／必須涵蓋的重點 <span class="hint-inline">自動填寫＋可編輯，每行一項</span><textarea id="materialsInput" rows="4" placeholder="例如：書籍核心觀點、人物關係、章節摘要、旅遊交通、注意事項…"></textarea></label>
 <label>公開讀者分享摘要／觀點 <span class="hint-inline">自動整理，非你的親身心得</span><textarea id="readerOpinionsInput" rows="4" placeholder="搜尋後會顯示可擷取的公開讀者分享短摘要，附來源。內容有限時不捏造。"></textarea></label>
 <label>個人閱讀心得／真實體驗 <span class="hint-inline">自動填入「公開讀者觀點（非本人）」；也可自行改寫親身心得</span><textarea id="readingNotesInput" rows="4" placeholder="搜尋後自動帶入公開讀者心得摘要並附註非本人。若填寫自己的心得，請清楚取代標記內容。"></textarea></label>
 <div class="source-stack"><label>資料來源名稱（選填）<input id="sourceTitleInput" placeholder="出版社官方介紹、政府公告、實地訪談等"/></label><label>來源網址（選填）<input id="sourceUrlInput" inputType="url" placeholder="https://..."/></label></div>
