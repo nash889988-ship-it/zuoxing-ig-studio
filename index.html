@@ -33,9 +33,9 @@
 </div>
 <label>文字語氣<select id="toneInput"><option>專業、自然、有深度</option><option>清楚、精簡、實用</option><option>溫暖、細膩、有共鳴</option><option>強對比、吸睛</option></select></label>
 <div class="spec-row"><span>每張內容上限（標題＋內文）</span><strong>120 字</strong></div>
-<label>個人 OpenAI API 金鑰（僅本次頁面使用）<input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-... 請勿分享金鑰"/></label>
+<label>個人 OpenAI API 金鑰（同一組可重複使用）<input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="貼上你已建立的 API 金鑰，不必重新產生"/></label><div class="api-key-options"><label class="remember-key-choice"><input id="rememberKeyInput" type="checkbox"/> 在這台裝置記住金鑰，下次自動帶入</label><button class="secondary small" type="button" id="forgetKeyBtn">清除已記住的金鑰</button></div><p id="keyStorageStatus" class="fineprint" aria-live="polite">預設不儲存金鑰；請勿在共用或公用電腦啟用記住功能。</p>
 <div class="action-row"><button class="primary" id="aiScriptBtn">✦ AI 自動產生精準腳本</button><button class="secondary" id="templateBtn">使用離線模板</button></div>
-<p class="fineprint">採用你個人的 API 金鑰，透過 Render 服務傳送給 OpenAI，可能產生 API 費用。網站不將金鑰存進 localStorage；生成內容仍需人工查核。若只提供書名卻缺少可靠書籍摘要，系統會提示補充資料，不會虛構書評。</p>
+<p class="fineprint">採用你個人的 API 金鑰，透過 Render 服務傳送給 OpenAI，可能產生 API 費用。勾選「記住金鑰」會將金鑰保存在此裝置的瀏覽器儲存空間（未加密），同一網址下次自動帶入；未勾選不會持久儲存。請僅在自己的可信裝置使用，並可隨時按清除。生成內容仍需人工查核。若只提供書名卻缺少可靠書籍摘要，系統會提示補充資料，不會虛構書評。</p>
 </div>
 <div class="panel script-editor"><div class="row-between"><h3>逐張腳本</h3><span id="slideCountText">0 張</span></div><div id="verificationNotice" class="verification-note" hidden></div><div id="slideEditor" class="empty">完成資料輸入後，生成 5–10 張逐張可編輯的內容與圖片建議。</div></div>
 </div>
