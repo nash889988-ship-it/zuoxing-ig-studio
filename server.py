@@ -9,7 +9,7 @@ from email.utils import parsedate_to_datetime
 import os, json, base64, re, hmac, xml.etree.ElementTree as ET, mimetypes
 
 ROOT=Path(__file__).resolve().parent
-HOST=os.environ.get('IG_STUDIO_HOST','127.0.0.1')
+HOST=os.environ.get('IG_STUDIO_HOST', '0.0.0.0' if os.environ.get('RENDER') == 'true' else '127.0.0.1')
 PORT=int(os.environ.get('PORT',os.environ.get('IG_STUDIO_PORT','8765')))
 ACCESS_PASSWORD=os.environ.get('IG_STUDIO_PASSWORD','').strip()
 MAX_BODY=2_500_000
@@ -86,7 +86,7 @@ def generate_image(payload):
     return {'data_url':'data:image/png;base64,'+blob}
 
 class Handler(SimpleHTTPRequestHandler):
-    def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT/'site'),**kw)
+    def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT),**kw)
     def authenticate(self):
         # On a public service require login even for static assets; otherwise anonymous
         # users could exhaust the paid API budget via /api/script and /api/image.
