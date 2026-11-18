@@ -72,7 +72,7 @@ def chat_ai(payload, key):
     last_error='AI 未產生符合規格的腳本'
     for attempt in range(2):
         if attempt:
-            req['input']=prompt+'\\n你上次的結果不符合規格：'+last_error+'。請修正並確保只輸出合法 JSON。'
+            req['input']=prompt+'\n你上次的結果不符合規格：'+last_error+'。請修正並確保只輸出合法 JSON。'
         data=json.dumps(req,ensure_ascii=False).encode()
         try:
             result=get_json('https://api.openai.com/v1/responses',
@@ -127,7 +127,6 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(200,get_news());return
         return super().do_GET()
     def do_POST(self):
-        if not self.authenticate():return
         if self.path not in ['/api/script','/api/image']:
             self.reply(404,{'error':'Not Found'});return
         key=self.headers.get('X-User-OpenAI-Key','').strip()
