@@ -111,14 +111,15 @@ def fetch_public_description(url):
 class ArticleBodyParser(HTMLParser):
     """Extract readable public article text, not a paywall or JS-only document."""
     def __init__(self):
-        super().__init__();self.stack=[];self.skip=0;self.blocks=[];self.current='';self.title='';self.heading=False
+        super().__init__();self.stack=[];self.skip=0;self.blocks=[];self.scoped=[];self.current='';self.title='';self.heading=False
     def handle_starttag(self,tag,attrs):
         if tag in ('script','style','noscript','nav','footer','header','aside','form','svg'):
             self.skip+=1
         if tag in ('p','h1','h2','h3','blockquote','li') and not self.skip:
             self.current=''
         if tag in ('title',):self.heading=True
-        self.stack.append(tag)
+        if tag not in ('area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'):
+            self.stack.append(tag)
     def handle_data(self,data):
         if self.skip:return
         tag=self.stack[-1] if self.stack else ''
@@ -130,6 +131,7 @@ class ArticleBodyParser(HTMLParser):
             p=short_text(self.current,1600)
             if len(p)>=24 and not re.search(r'(cookie|隱私權政策|登入.*註冊|相關文章|您可能也喜歡|廣告合作)',p,re.I):
                 self.blocks.append(p)
+                if 'article' in self.stack or 'main' in self.stack:self.scoped.append(p)
             self.current=''
         if tag=='title':self.heading=False
         if tag in ('script','style','noscript','nav','footer','header','aside','form','svg') and self.skip:
@@ -166,7 +168,8 @@ def read_selected_article(url):
         parser=ArticleBodyParser()
         parser.feed(content.decode(enc,'replace'))
         uniq=[];seen=set()
-        for block in parser.blocks:
+        candidates=parser.scoped if sum(len(p) for p in parser.scoped)>=240 else parser.blocks
+        for block in candidates:
             key=block[:90]
             if key in seen:continue
             seen.add(key);uniq.append(block)
