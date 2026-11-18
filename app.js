@@ -42,7 +42,7 @@ function renderBooks(){
  }
 }
 renderBooks();
-function resetEditorialForNewTopic(){readerRequestSerial++;state.slides=[];state.images=[];state.current=0;$('#captionInput').value='';$('#hashtagsInput').value='';$('#verificationNotice').hidden=true;$('#extraSources').replaceChildren();$('#readerOpinionsInput').value='';$('#readingNotesInput').value='';$('#readerResults').replaceChildren();$('#readerResults').hidden=true;$('#readerFetchStatus').textContent='選擇書籍後可自動整理公開來源';$('#scriptMode').textContent='新主題｜待生成';renderScript()}
+function resetEditorialForNewTopic(){readerRequestSerial++;articleRequestSerial++;$('#selectedArticleUrl').value='';$('#articleExtractStatus').textContent='請選擇搜尋到的文章，或貼入可公開閱讀的網址。';state.slides=[];state.images=[];state.current=0;$('#captionInput').value='';$('#hashtagsInput').value='';$('#verificationNotice').hidden=true;$('#extraSources').replaceChildren();$('#readerOpinionsInput').value='';$('#readingNotesInput').value='';$('#readerResults').replaceChildren();$('#readerResults').hidden=true;$('#readerFetchStatus').textContent='選擇書籍後可自動整理公開來源';$('#scriptMode').textContent='新主題｜待生成';renderScript()}
 function selectTopic(item){resetEditorialForNewTopic();$('#topicInput').value=item.title||item.handle||'';$('#contentTypeInput').value=/旅遊|景點|步道|活動|南投/.test(item.category||'')?'travel':'knowledge';$('#detailsInput').value=`來源：${item.source||item.source_url||'使用者提供'}\n資料日期：${formatTime(item.published||item.observed_at)}\n參考連結：${item.url||''}\n請補充來源內文或可查證的事實，AI 不會僅憑標題猜測。`;$('#sourceTitleInput').value=item.source||'';$('#sourceUrlInput').value=item.url||'';$('#sourceTextInput').value='';$('#materialsInput').value='';$('#readingNotesInput').value='';activate('write');toast('已帶入主題，請貼入真正的來源摘要或素材後生成腳本')}
 function safeResearchItem(item,type){if(!item||typeof item!=='object')return null;let u=type==='accounts'?item.url:item.url; if(!linkOk(u))return null;const o={...item};o.title=String(o.title||o.handle||'未命名').slice(0,220);o.category=String(o.category||'未分類').slice(0,40);o.url=u;o.source=String(o.source||o.source_url||'來源未提供').slice(0,130);['likes','views','comments'].forEach(k=>{if(!Number.isFinite(o[k])||o[k]<0)o[k]=null});return o}
 function renderResearch(){const topicFilter=$('#topicFilter').value;let topics=state.topics.filter(t=>topicFilter==='all'||t.category===topicFilter);$('#topicNum').textContent=state.topics.length;$('#accountNum').textContent=state.accounts.length;const tc=$('#topicCards');tc.replaceChildren();if(!topics.length){tc.innerHTML='<div class="empty">目前沒有符合類別的已取得資料。可更新新聞線索或匯入有來源的資料。</div>'}topics.slice(0,40).forEach(item=>tc.appendChild(createCard(item,false)));const ac=$('#accountCards');ac.replaceChildren();if(!state.accounts.length)ac.innerHTML='<div class="empty">目前無法取得可核實的每週帳號觀察值。請匯入具來源的 IG 帳號資料，不會憑空湊滿十個。</div>';state.accounts.slice(0,10).forEach(item=>ac.appendChild(createCard(item,true)))}
@@ -148,7 +148,9 @@ async function fetchReaderResearch(){
    const a=document.createElement('a');a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=item.title;
    const small=document.createElement('small');
    small.textContent=(item.publisher||'公開搜尋')+(item.usable?'｜短摘要已擷取':'｜僅搜尋線索，無法確認正文');
-   line.append(a,small);panel.appendChild(line);
+   const choose=document.createElement('button');choose.type='button';choose.className='secondary small';choose.textContent='選擇這篇文章並擷取正文';
+   choose.addEventListener('click',()=>{$('#selectedArticleUrl').value=item.url;extractArticleIntoFields();});
+   line.append(a,small,choose);panel.appendChild(line);
   }
   panel.hidden=false;
   $('#readerFetchStatus').textContent=(publisher||opinions.length)?'三個欄位已填寫，請核對內容與來源':'三個欄位已標示資料不足，尚無可引用正文';
@@ -157,6 +159,36 @@ async function fetchReaderResearch(){
  finally{if(serial===readerRequestSerial){button.disabled=false;button.textContent='↻ 自動搜尋並填寫三個欄位'}}
 }
 $('#fetchReaderBtn').addEventListener('click',fetchReaderResearch);
+let articleRequestSerial=0;
+async function extractArticleIntoFields(){
+ const url=$('#selectedArticleUrl').value.trim();
+ if(!url || !linkOk(url) || !url.startsWith('https://')){toast('請先選擇或貼入公開 HTTPS 文章網址');return}
+ const button=$('#extractArticleBtn'),serial=++articleRequestSerial;
+ button.disabled=true;button.textContent='正在讀取正文與整理文章…';
+ $('#articleExtractStatus').textContent='正在取得選擇的文章正文，並由 AI 整理成三個欄位；這會使用你的 API 額度。';
+ try{
+  const result=await postJSON('/api/article-extract',{url,topic:$('#topicInput').value.trim()});
+  if(serial!==articleRequestSerial || url!==$('#selectedArticleUrl').value.trim())return;
+  if(result.status!=='ready' || !result.source_summary || !result.reader_viewpoint ||
+      !Array.isArray(result.materials) || !result.materials.length)
+   throw Error('文章擷取結果不完整，未更新欄位');
+  const from='【根據所選文章的 AI 提要，非本人閱讀心得】';
+  $('#materialsInput').value=result.materials.map(v=>'• '+v).join('\n');
+  $('#readingNotesInput').value=from+'\n'+result.reader_viewpoint+
+    '\n\n資料來源：'+(result.article_title||url)+'\n原始網址：'+result.url;
+  $('#readerOpinionsInput').value=from+'\n'+result.reader_viewpoint+'\n來源：'+result.url;
+  $('#sourceTextInput').value='【已讀取文章正文後的 AI 摘要；非原文逐字引用】\n'+result.source_summary+
+    '\n\n文章：'+(result.article_title||'')+'\n來源：'+result.url;
+  $('#sourceTitleInput').value=result.article_title||'所選公開文章';
+  $('#sourceUrlInput').value=result.url;
+  $('#articleExtractStatus').textContent='已從所選文章正文整理 '+result.extracted_chars+
+    ' 字，成功自動填寫三個欄位。原文未完整複製，請在發布前核對。';
+  toast('文章正文已整理完畢，三個指定欄位已自動填寫。');
+ }catch(e){$('#articleExtractStatus').textContent='無法擷取這篇文章：'+e.message+'。原本的三個欄位未被覆蓋。';toast('文章提要失敗：'+e.message)}
+ finally{if(serial===articleRequestSerial){button.disabled=false;button.textContent='✦ 讀取這篇文章並自動填寫三個欄位'}}
+}
+$('#extractArticleBtn').addEventListener('click',extractArticleIntoFields);
+
 $('#addSourceBtn').addEventListener('click',()=>{
  const host=$('#extraSources');if(host.children.length>=7){toast('最多可填入8組來源');return}
  const box=document.createElement('div');box.className='source-row';
@@ -182,7 +214,7 @@ $('#aiScriptBtn').addEventListener('click',async()=>{
   const payload={
    topic,content_type:$('#contentTypeInput').value,story_details:$('#detailsInput').value,
    important_materials:$('#materialsInput').value.split('\n').map(x=>x.trim()).filter(Boolean),
-   reading_notes:$('#readingNotesInput').value.startsWith(AUTO_READER_MARK)?'':$('#readingNotesInput').value,public_reader_viewpoints:$('#readingNotesInput').value.startsWith(AUTO_READER_MARK)?$('#readingNotesInput').value:$('#readerOpinionsInput').value,sources,
+   reading_notes:($('#readingNotesInput').value.startsWith(AUTO_READER_MARK)||$('#readingNotesInput').value.startsWith('【根據所選文章的 AI 提要，非本人閱讀心得】'))?'':$('#readingNotesInput').value,public_reader_viewpoints:$('#readerOpinionsInput').value,sources,
    slide_count:Number($('#countInput').value),max_chars_per_slide:120,
    goal:$('#goalInput').value,tone:$('#toneInput').value,visual_style:state.style
   };
