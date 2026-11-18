@@ -38,3 +38,10 @@
 .reader-result-line{padding:10px 0;border-top:1px solid #e5ede7;display:grid;gap:4px}
 .reader-result-line a{font-weight:650;font-size:13px;color:#245b43;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
 .reader-result-line small{font-size:11px;color:#63746b}
+
+/* Optional, user-controlled API credential persistence */
+.api-key-options{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:-2px 0 7px}
+.api-key-options .remember-key-choice{display:inline-flex;align-items:center;gap:9px;margin:0;font-size:13px;font-weight:600;line-height:1.6;cursor:pointer}
+.api-key-options .remember-key-choice input[type="checkbox"]{width:17px;height:17px;min-height:unset;margin:0;accent-color:#236343;flex:none}
+.api-key-options #forgetKeyBtn{white-space:normal}
+#keyStorageStatus{margin:0 0 14px;color:#6b5843;line-height:1.65}
