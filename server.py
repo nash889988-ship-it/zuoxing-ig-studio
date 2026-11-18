@@ -137,6 +137,21 @@ def reader_research(payload):
                 if len(found)>=8:break
         except Exception as e:errors.append(type(e).__name__)
         if len(found)>=8:break
+    opinions=[]
+    # Read only short public metadata descriptions, not full copyrighted review text.
+    for lead in found[:4]:
+        page=fetch_public_description(lead['url'])
+        if not page or not page['description']:continue
+        descriptor=page['description']
+        if subject[:4] not in (page['page_title']+' '+descriptor):continue
+        # Metadata can be a teaser or site-generated snippet, so label as a limited excerpt.
+        lead['summary']=descriptor[:220]
+        lead['kind']='公開文章摘要（未核對完整讀者評論）'
+        lead['usable']=True
+        opinions.append({'source':lead['publisher'] or '公開閱讀分享網頁',
+                         'title':lead['title'],'url':lead['url'],
+                         'excerpt':descriptor[:200],
+                         'status':'網頁公開摘要／讀者觀點待核實'})
     # Independently obtain publisher-provided book summary, not a reader review.
     publisher=None
     try:
@@ -156,15 +171,20 @@ def reader_research(payload):
     # Only provide a bibliography of discoverable links if review bodies cannot be read.
     result={'book':subject,'searched_at':datetime.now(timezone.utc).isoformat(),
             'reader_leads':found,'publisher_summary':publisher,
-            'important_materials':[],'reader_viewpoints':[],'sources':[],
+            'important_materials':[],'reader_viewpoints':opinions,'sources':[],
             'status':'leads_only','errors':errors,
             'notice':'讀者評論搜尋僅回傳可點擊線索；沒有取得評論正文就不填入讀者心得。書籍介紹若找到則可獨立用作大綱參考；讀者心得不得冒充本人已閱讀。'}
+    if opinions:
+        result['status']='public_excerpt_unverified'
+        for opinion in opinions:
+            result['sources'].append({'title':'公開讀者分享摘要｜'+opinion['source'],'url':opinion['url'],
+                                     'verified_text':opinion['excerpt'],'verified':False,'kind':'reader_excerpt'})
     if publisher:
         result['sources'].append({'title':publisher['source']+'｜'+publisher['title'],
                  'url':publisher['url'],'verified_text':publisher['text'],'verified':False,
                  'kind':'publisher_summary'})
         result['important_materials']=['書籍介紹（出版社／書目資料，非讀者意見）','書籍內容仍需對照原書核實']
-        result['status']='publisher_only'
+        result['status']='publisher_and_reader_leads' if opinions else 'publisher_only'
     return result
 
 def script_status_missing(topic, ctype, missing):
