@@ -42,7 +42,7 @@ function renderBooks(){
  }
 }
 renderBooks();
-function resetEditorialForNewTopic(){state.slides=[];state.images=[];state.current=0;$('#captionInput').value='';$('#hashtagsInput').value='';$('#verificationNotice').hidden=true;$('#extraSources').replaceChildren();$('#readerOpinionsInput').value='';$('#readerResults').replaceChildren();$('#readerResults').hidden=true;$('#readerFetchStatus').textContent='選擇書籍後可自動整理公開來源';$('#scriptMode').textContent='新主題｜待生成';renderScript()}
+function resetEditorialForNewTopic(){readerRequestSerial++;state.slides=[];state.images=[];state.current=0;$('#captionInput').value='';$('#hashtagsInput').value='';$('#verificationNotice').hidden=true;$('#extraSources').replaceChildren();$('#readerOpinionsInput').value='';$('#readingNotesInput').value='';$('#readerResults').replaceChildren();$('#readerResults').hidden=true;$('#readerFetchStatus').textContent='選擇書籍後可自動整理公開來源';$('#scriptMode').textContent='新主題｜待生成';renderScript()}
 function selectTopic(item){resetEditorialForNewTopic();$('#topicInput').value=item.title||item.handle||'';$('#contentTypeInput').value=/旅遊|景點|步道|活動|南投/.test(item.category||'')?'travel':'knowledge';$('#detailsInput').value=`來源：${item.source||item.source_url||'使用者提供'}\n資料日期：${formatTime(item.published||item.observed_at)}\n參考連結：${item.url||''}\n請補充來源內文或可查證的事實，AI 不會僅憑標題猜測。`;$('#sourceTitleInput').value=item.source||'';$('#sourceUrlInput').value=item.url||'';$('#sourceTextInput').value='';$('#materialsInput').value='';$('#readingNotesInput').value='';activate('write');toast('已帶入主題，請貼入真正的來源摘要或素材後生成腳本')}
 function safeResearchItem(item,type){if(!item||typeof item!=='object')return null;let u=type==='accounts'?item.url:item.url; if(!linkOk(u))return null;const o={...item};o.title=String(o.title||o.handle||'未命名').slice(0,220);o.category=String(o.category||'未分類').slice(0,40);o.url=u;o.source=String(o.source||o.source_url||'來源未提供').slice(0,130);['likes','views','comments'].forEach(k=>{if(!Number.isFinite(o[k])||o[k]<0)o[k]=null});return o}
 function renderResearch(){const topicFilter=$('#topicFilter').value;let topics=state.topics.filter(t=>topicFilter==='all'||t.category===topicFilter);$('#topicNum').textContent=state.topics.length;$('#accountNum').textContent=state.accounts.length;const tc=$('#topicCards');tc.replaceChildren();if(!topics.length){tc.innerHTML='<div class="empty">目前沒有符合類別的已取得資料。可更新新聞線索或匯入有來源的資料。</div>'}topics.slice(0,40).forEach(item=>tc.appendChild(createCard(item,false)));const ac=$('#accountCards');ac.replaceChildren();if(!state.accounts.length)ac.innerHTML='<div class="empty">目前無法取得可核實的每週帳號觀察值。請匯入具來源的 IG 帳號資料，不會憑空湊滿十個。</div>';state.accounts.slice(0,10).forEach(item=>ac.appendChild(createCard(item,true)))}
@@ -56,42 +56,74 @@ function template(){if($('#contentTypeInput').value==='book_review'){toast('閱�
 $('#templateBtn').addEventListener('click',template);
 async function postJSON(url,obj){const key=$('#apiKeyInput').value.trim();if(!/^sk-[A-Za-z0-9_-]{16,250}$/.test(key))throw Error('請先輸入有效的個人 OpenAI API 金鑰');let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-User-OpenAI-Key':key},cache:'no-store',body:JSON.stringify(obj)});let d=await r.json();if(!r.ok)throw Error(d.error||'API 錯誤');return d}
 let readerRequestSerial=0;
+const AUTO_READER_MARK='【自動整理：公開讀者觀點，非本人閱讀心得】';
+const NO_REVIEW='【資料不足】尚未取得可核對的公開讀者心得正文，不能自行編造讀後感。';
+const NO_SOURCE='【資料不足】只找到搜尋連結，尚未取得可供引用的文章或書籍介紹文字。';
+function renderAutoReviewText(reviews){
+ if(!reviews.length)return AUTO_READER_MARK+'\n'+NO_REVIEW;
+ return AUTO_READER_MARK+'\n'+reviews.slice(0,4).map((x,i)=>
+  '讀者分享摘要 '+(i+1)+'（來源：'+(x.source||'未標明')+'）\n'+x.excerpt+'\n原始連結：'+x.url
+ ).join('\n\n')+'\n（以上是公開網站摘要，需人工核對，不代表使用者已閱讀本書）';
+}
+function uniqueMaterialLines(publisher,reviews){
+ const arr=[];
+ if(publisher && publisher.text){
+  const phrases=publisher.text.split(/[。！？\n]/).map(x=>x.trim()).filter(x=>x.length>=10&&x.length<=180);
+  for(const p of phrases.slice(0,4))arr.push('書籍介紹：'+p);
+ }
+ for(const v of reviews.slice(0,2)){
+  if(v.excerpt)arr.push('公開讀者觀點（待核實）：'+v.excerpt.slice(0,105)+'（來源：'+(v.source||'公開評論')+'）');
+ }
+ return arr.length?arr.slice(0,6).join('\n'):'【資料不足】未取得可確認的內容重點，請提供書籍介紹或可核對的評論。';
+}
 async function fetchReaderResearch(){
  const topic=$('#topicInput').value.trim();
  if(!topic){toast('請先選擇書籍或輸入書名');return}
- const b=$('#fetchReaderBtn'),serial=++readerRequestSerial;
- b.disabled=true;b.textContent='正在搜尋公開讀者分享…';
- $('#readerFetchStatus').textContent='搜尋公開讀書心得、書評與書籍中繼資料';
+ const button=$('#fetchReaderBtn'),serial=++readerRequestSerial;
+ button.disabled=true;button.textContent='正在搜尋並填寫…';
+ $('#readerFetchStatus').textContent='正在擷取書籍介紹、公開讀者分享與可引用的來源摘要';
  try{
-  const response=await fetch('/api/reader-research',{method:'POST',
-   headers:{'Content-Type':'application/json'},body:JSON.stringify({topic})});
-  const data=await response.json();if(!response.ok)throw Error(data.error||'讀取失敗');
-  if(serial!==readerRequestSerial)return;
-  const reviews=data.reader_viewpoints||[],leads=data.reader_leads||[],publisher=data.publisher_summary;
-  $('#readerOpinionsInput').value=reviews.map((x,i)=>'公開讀者分享摘要 '+(i+1)+'｜'+x.source+'\n'+x.excerpt+'\n來源：'+x.url+'\n（公開摘要，非完整書評；待核對）').join('\n\n');
+  const response=await fetch('/api/reader-research',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({topic})});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'研究服務無法讀取');
+  if(serial!==readerRequestSerial || topic!==$('#topicInput').value.trim())return;
+  const opinions=(data.reader_viewpoints||[]).filter(x=>x.excerpt&&x.url);
+  const leads=data.reader_leads||[],publisher=data.publisher_summary;
+  const readerText=renderAutoReviewText(opinions);
+  // Fill the three explicitly requested fields while keeping clear provenance and editability.
+  $('#materialsInput').value=uniqueMaterialLines(publisher,opinions);
+  $('#readingNotesInput').value=readerText;
+  $('#readerOpinionsInput').value=readerText;
+  const quoted=[];
+  if(publisher?.text)quoted.push('【書籍介紹；非原書全文】\n'+publisher.text+'\n來源：'+publisher.source+'\n網址：'+publisher.url);
+  for(const x of opinions.slice(0,3))
+   quoted.push('【公開讀者文章短摘要；非完整評論】\n'+x.excerpt+'\n來源：'+(x.source||'公開網頁')+'\n網址：'+x.url);
+  $('#sourceTextInput').value=quoted.length?quoted.join('\n\n'):NO_SOURCE;
   if(publisher){
    $('#sourceTitleInput').value=publisher.source;
    $('#sourceUrlInput').value=publisher.url;
-   $('#sourceTextInput').value=publisher.text;
-   const materials=$('#materialsInput');
-   const bullets=['出版社／書目資料中可查的書籍內容（非讀者心得）','將讀者不同評價作為討論角度，勿當成書籍情節事實'];
-   materials.value=[materials.value,...bullets].filter(Boolean).join('\n');
+  }else if(opinions.length){
+   $('#sourceTitleInput').value='公開讀者分享摘要（待核對）';
+   $('#sourceUrlInput').value=opinions[0].url;
+  }else{
+   $('#sourceTitleInput').value='';$('#sourceUrlInput').value='';
   }
-  const result=$('#readerResults');result.replaceChildren();
+  const panel=$('#readerResults');panel.replaceChildren();
   const note=document.createElement('p');note.className='fineprint';
-  note.textContent='找到 '+leads.length+' 則公開書評搜尋線索、'+reviews.length+' 則可讀短摘要，'+(publisher?'另取得書籍介紹':'未取得可用書籍介紹')+'。搜尋線索不等於已讀完整書評。';
-  result.appendChild(note);
+  note.textContent='已自動填寫三個欄位；找到 '+leads.length+' 則書評線索、'+opinions.length+' 則可讀短摘要，'+(publisher?'取得書籍介紹。':'未取得書籍介紹。')+' 欄位中的公開觀點不是你的親身心得。';
+  panel.appendChild(note);
   for(const item of leads.slice(0,8)){
    const line=document.createElement('div');line.className='reader-result-line';
    const a=document.createElement('a');a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=item.title;
-   const small=document.createElement('small');small.textContent=item.publisher+(item.usable?'｜已取得短摘要':'｜僅有搜尋連結，內容未取得');
-   line.append(a,small);result.appendChild(line);
+   const small=document.createElement('small');
+   small.textContent=(item.publisher||'公開搜尋')+(item.usable?'｜短摘要已擷取':'｜僅搜尋線索，無法確認正文');
+   line.append(a,small);panel.appendChild(line);
   }
-  result.hidden=false;
-  $('#readerFetchStatus').textContent=reviews.length?'已取得公開短摘要｜請核對來源':publisher?'已取得書籍介紹，讀者觀點仍待核實':'只找到搜尋線索，需補充實際內容';
-  toast('公開資料搜尋完成；已區分書籍介紹、讀者摘要與個人心得。');
- }catch(e){$('#readerFetchStatus').textContent='自動搜尋未完成';toast('讀者資料搜尋失敗：'+e.message)}
- finally{if(serial===readerRequestSerial){b.disabled=false;b.textContent='↻ 自動搜尋公開讀者分享'}}
+  panel.hidden=false;
+  $('#readerFetchStatus').textContent=(publisher||opinions.length)?'三個欄位已填寫，請核對內容與來源':'三個欄位已標示資料不足，尚無可引用正文';
+  toast((publisher||opinions.length)?'已自動填好三個欄位，請檢查來源':'只找到搜尋線索，已在三欄標示資料不足，未編造內容');
+ }catch(e){$('#readerFetchStatus').textContent='搜尋失敗，原欄位未變更';toast('自動填寫失敗：'+e.message)}
+ finally{if(serial===readerRequestSerial){button.disabled=false;button.textContent='↻ 自動搜尋並填寫三個欄位'}}
 }
 $('#fetchReaderBtn').addEventListener('click',fetchReaderResearch);
 $('#addSourceBtn').addEventListener('click',()=>{
@@ -119,7 +151,7 @@ $('#aiScriptBtn').addEventListener('click',async()=>{
   const payload={
    topic,content_type:$('#contentTypeInput').value,story_details:$('#detailsInput').value,
    important_materials:$('#materialsInput').value.split('\n').map(x=>x.trim()).filter(Boolean),
-   reading_notes:$('#readingNotesInput').value,public_reader_viewpoints:$('#readerOpinionsInput').value,sources,
+   reading_notes:$('#readingNotesInput').value.startsWith(AUTO_READER_MARK)?'':$('#readingNotesInput').value,public_reader_viewpoints:$('#readingNotesInput').value.startsWith(AUTO_READER_MARK)?$('#readingNotesInput').value:$('#readerOpinionsInput').value,sources,
    slide_count:Number($('#countInput').value),max_chars_per_slide:120,
    goal:$('#goalInput').value,tone:$('#toneInput').value,visual_style:state.style
   };
