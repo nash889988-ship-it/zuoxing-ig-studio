@@ -3,10 +3,11 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
-import os, json, base64, re, hmac, xml.etree.ElementTree as ET, mimetypes
+import os, json, base64, re, hmac, xml.etree.ElementTree as ET, mimetypes, html, ipaddress, socket
+from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 
 ROOT=Path(__file__).resolve().parent
@@ -59,6 +60,112 @@ def get_news(days=7):
     entries.sort(key=lambda x:x['published'],reverse=True)
     return {'updated':datetime.now(timezone.utc).isoformat(),'range_days':days,'topics':entries[:100], 'errors':errors,
             'notice':'這是近期新聞/官方報導線索，不是 IG 熱門排名；未取得公開貼文互動量時顯示未取得。', 'accounts':[]}
+
+
+class PageMetaParser(HTMLParser):
+    """Public article metadata only, not entire copyrighted reviews."""
+    def __init__(self):
+        super().__init__();self.title='';self.description='';self.in_title=False
+    def handle_starttag(self,tag,attrs):
+        a=dict(attrs)
+        if tag=='title':self.in_title=True
+        if tag=='meta':
+            key=(a.get('property') or a.get('name') or '').lower()
+            if key in ('og:description','description','twitter:description') and not self.description:
+                self.description=a.get('content','')
+    def handle_endtag(self,tag):
+        if tag=='title':self.in_title=False
+    def handle_data(self,data):
+        if self.in_title:self.title+=data
+
+def short_text(v,n=360):
+    return re.sub(r'\s+',' ',html.unescape(re.sub(r'<[^>]+>',' ',str(v or '')))).strip()[:n]
+
+def safe_public_url(url):
+    """Prevent URL-provided SSRF, even through DNS aliases."""
+    try:
+        p=urlsplit(url)
+        if p.scheme!='https' or not p.hostname or p.username or p.password: return False
+        if p.port not in (None,443):return False
+        host=p.hostname.lower().rstrip('.')
+        if host in ('localhost','localhost.localdomain') or host.endswith('.local') or '.' not in host:return False
+        addrs=socket.getaddrinfo(host,443,proto=socket.IPPROTO_TCP)
+        return bool(addrs) and all(ipaddress.ip_address(x[4][0]).is_global for x in addrs)
+    except (ValueError,OSError,TypeError):return False
+
+def fetch_public_description(url):
+    if not safe_public_url(url):return None
+    try:
+        req=Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; ZuoxingReaderResearch/1.0)'})
+        with urlopen(req,timeout=7) as res:
+            final=res.geturl()
+            if not safe_public_url(final):return None
+            if 'html' not in res.headers.get('Content-Type','').lower():return None
+            raw=res.read(180_000)
+        parser=PageMetaParser()
+        parser.feed(raw.decode('utf-8','replace'))
+        return {'url':final,'page_title':short_text(parser.title,180),
+                'description':short_text(parser.description,280)}
+    except Exception:return None
+
+def reader_research(payload):
+    """Collect attributable public reader-review leads; do not claim the book was read."""
+    subject=str(payload.get('topic','')).strip()[:140]
+    subject=re.sub(r'^(閱讀話題|讀書心得|書評)\s*[｜:：]\s*','',subject).strip()
+    if not subject:raise ValueError('請先選擇或輸入書名')
+    # Remove marketing labels but keep an identifiable book title.
+    subject=re.sub(r'〔[^〕]*〕|〖[^〗]*〗','',subject).strip()[:90]
+    queries=[f'"{subject}" 書評 心得',f'"{subject}" 讀後感 讀者']
+    found=[];errors=[];seen=set()
+    for query in queries:
+        url='https://news.google.com/rss/search?q='+quote(query)+'&hl=zh-TW&gl=TW&ceid=TW:zh-Hant'
+        try:
+            req=Request(url,headers={'User-Agent':'Mozilla/5.0'})
+            with urlopen(req,timeout=9) as resp:tree=ET.fromstring(resp.read(850_000))
+            for item in tree.findall('.//item')[:12]:
+                label=short_text(item.findtext('title'),170)
+                href=item.findtext('link') or ''
+                publisher=short_text(item.findtext('source'),80)
+                date=short_text(item.findtext('pubDate'),70)
+                if not href.startswith('https://news.google.com/'):continue
+                if not (subject[:4] in label or subject[:4] in short_text(item.findtext('description'))):continue
+                if href in seen:continue
+                seen.add(href)
+                found.append({'title':label,'url':href,'publisher':publisher,
+                              'published':date,'kind':'公開搜尋線索・內容待查證',
+                              'summary':'','usable':False})
+                if len(found)>=8:break
+        except Exception as e:errors.append(type(e).__name__)
+        if len(found)>=8:break
+    # Independently obtain publisher-provided book summary, not a reader review.
+    publisher=None
+    try:
+        qurl='https://www.googleapis.com/books/v1/volumes?q='+quote('intitle:'+subject)+'&maxResults=5&printType=books'
+        data=get_json(qurl,timeout=9)
+        for volume in data.get('items',[]):
+            info=volume.get('volumeInfo') or {}
+            name=short_text(info.get('title'),150)
+            desc=short_text(info.get('description'),850)
+            if name and desc and (subject[:5] in name or name[:5] in subject):
+                publisher={'title':name,'source':'Google Books 書籍中繼資料・出版社介紹（非讀者心得）',
+                           'url':info.get('infoLink') or 'https://books.google.com/',
+                           'text':desc,'kind':'書籍介紹・供核對'}
+                break
+    except Exception as e:errors.append('book_metadata_'+type(e).__name__)
+    # Search snippets and page metadata are NOT substantiated reader sentiments.
+    # Only provide a bibliography of discoverable links if review bodies cannot be read.
+    result={'book':subject,'searched_at':datetime.now(timezone.utc).isoformat(),
+            'reader_leads':found,'publisher_summary':publisher,
+            'important_materials':[],'reader_viewpoints':[],'sources':[],
+            'status':'leads_only','errors':errors,
+            'notice':'讀者評論搜尋僅回傳可點擊線索；沒有取得評論正文就不填入讀者心得。書籍介紹若找到則可獨立用作大綱參考；讀者心得不得冒充本人已閱讀。'}
+    if publisher:
+        result['sources'].append({'title':publisher['source']+'｜'+publisher['title'],
+                 'url':publisher['url'],'verified_text':publisher['text'],'verified':False,
+                 'kind':'publisher_summary'})
+        result['important_materials']=['書籍介紹（出版社／書目資料，非讀者意見）','書籍內容仍需對照原書核實']
+        result['status']='publisher_only'
+    return result
 
 def script_status_missing(topic, ctype, missing):
     return {
@@ -221,8 +328,16 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(200,get_news());return
         return super().do_GET()
     def do_POST(self):
-        if self.path not in ['/api/script','/api/image']:
+        if self.path not in ['/api/script','/api/image','/api/reader-research']:
             self.reply(404,{'error':'Not Found'});return
+        if self.path=='/api/reader-research':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if length<2 or length>12000:raise ValueError('請求資料超出限制')
+                payload=json.loads(self.rfile.read(length))
+                self.reply(200,reader_research(payload))
+            except Exception as e:self.reply(400,{'error':str(e)[:250]})
+            return
         key=self.headers.get('X-User-OpenAI-Key','').strip()
         if not re.fullmatch(r'sk-[A-Za-z0-9_\\-]{16,250}',key):
             self.reply(403,{'error':'請先在網站輸入有效格式的個人 OpenAI API 金鑰，本站不使用共用金鑰。'});return
