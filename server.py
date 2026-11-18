@@ -13,7 +13,17 @@ HOST=os.environ.get('IG_STUDIO_HOST', '0.0.0.0' if os.environ.get('RENDER') == '
 PORT=int(os.environ.get('PORT',os.environ.get('IG_STUDIO_PORT','8765')))
 ACCESS_PASSWORD=os.environ.get('IG_STUDIO_PASSWORD','').strip()
 MAX_BODY=2_500_000
-TOPIC_QUERIES=[('露營知識','露營 安全 裝備 防潮 野炊'),('露營景點','台灣 露營區 親子 景點'),('南投戶外','南投 露營 山林 景點')]
+TOPIC_QUERIES=[
+    ('露營知識','台灣 露營 技巧 新手 裝備'),
+    ('露營安全','台灣 露營 安全 防火 一氧化碳'),
+    ('親子戶外知識','親子 戶外 教育 露營 安全'),
+    ('生態環境知識','台灣 山林 保育 露營 生態'),
+    ('露營景點','台灣 露營區 景點 新聞'),
+    ('南投旅遊','南投 景點 旅遊 露營'),
+    ('旅遊新消息','台灣 旅遊 景區 開放 新聞'),
+    ('步道與戶外','台灣 步道 開放 封閉 登山 消息'),
+    ('節慶與活動','台灣 露營 戶外 活動 市集'),
+]
 
 def get_json(url, headers=None, method=None, data=None, timeout=16):
     r=Request(url,data=data,headers=headers or {'User-Agent':'Mozilla/5.0 (IG studio local research)'},method=method)
@@ -30,7 +40,7 @@ def get_news(days=7):
             req=Request(url,headers={'User-Agent':'Mozilla/5.0'})
             with urlopen(req,timeout=10) as r: xml=r.read(1_500_000)
             root=ET.fromstring(xml)
-            for item in root.findall('.//item'):
+            for item in root.findall('.//item')[:12]:
                 title=item.findtext('title') or ''
                 link=item.findtext('link') or ''
                 date=item.findtext('pubDate') or ''
@@ -46,7 +56,7 @@ def get_news(days=7):
         except Exception as e:
             errors.append(f'{category}：{type(e).__name__}（遠端新聞服務暫時無法存取）')
     entries.sort(key=lambda x:x['published'],reverse=True)
-    return {'updated':datetime.now(timezone.utc).isoformat(),'range_days':days,'topics':entries[:70], 'errors':errors,
+    return {'updated':datetime.now(timezone.utc).isoformat(),'range_days':days,'topics':entries[:100], 'errors':errors,
             'notice':'這是近期新聞/官方報導線索，不是 IG 熱門排名；未取得公開貼文互動量時顯示未取得。', 'accounts':[]}
 
 def chat_ai(payload):
@@ -56,8 +66,8 @@ def chat_ai(payload):
     topic=str(payload.get('topic',''))[:180]
     details=str(payload.get('details',''))[:2000]
     goal=str(payload.get('goal','分享與收藏'))[:120]
-    prompt=f'''你是台灣「作興趣農場」IG輪播腳本編輯。依主題生成 {n} 張IG輪播分鏡。全繁體中文，內容限於已給事實；未知設施價格或人物事蹟不可發明；創作傳說必須標為虛構。每張標題+內文合計最多50字。首張有吸引力，最後一張符合 {goal} 的CTA。固定品牌IG @interest558855、官方LINE @wifi558855、訂位 https://forinterest.hexa.tw/。主題：{topic}。用戶素材：{details or '未提供'}。只輸出有效JSON物件，格式：{{"slides":[{{"title":"...","body":"...","image_prompt":"描述圖片底圖，不要文字、不要Logo"}}],"caption":"100字內貼文，包含品牌導流","hashtags":["#...",...],"notes":"出版前須查證事項"}}。slides正好{n}項；Hashtag 5~8項。'''
-    req={'model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini'),'input':prompt,'max_output_tokens':2200}
+    prompt=f'''你是台灣「作興趣農場」IG輪播腳本編輯。依主題生成 {n} 張IG輪播分鏡。全繁體中文，內容限於已給事實；未知設施價格或人物事蹟不可發明；創作傳說必須標為虛構。每張標題+內文合計最多80個中文字元（標點也計入），建議標題8~16字、內文35~60字。整組至少70%的分鏡聚焦『可核實的露營實用知識、原因、操作步驟、出遊資訊與安全注意事項』；故事/情緒只作為引子與收尾。每張只放一個清楚的知識重點，說明做法、適用情況、常見誤區。資料有來源才寫確定事實；不得捏造營地設施、旅遊最新公告、統計或數據；不確定就明確標記『待查證』。首張以知識鉤子吸引收藏，最後一張符合 {goal} 的CTA。固定品牌IG @interest558855、官方LINE @wifi558855、訂位 https://forinterest.hexa.tw/。主題：{topic}。用戶素材：{details or '未提供'}。只輸出有效JSON物件，格式：{{"slides":[{{"title":"...","body":"...","image_prompt":"描述圖片底圖，不要文字、不要Logo"}}],"caption":"100字內貼文，包含品牌導流","hashtags":["#...",...],"notes":"出版前須查證事項"}}。slides正好{n}項；Hashtag 5~8項。'''
+    req={'model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini'),'input':prompt,'max_output_tokens':3200}
     data=json.dumps(req,ensure_ascii=False).encode()
     result=get_json('https://api.openai.com/v1/responses',{'Authorization':'Bearer '+key,'Content-Type':'application/json'},'POST',data,45)
     text=''.join(c.get('text','') for o in result.get('output',[]) for c in o.get('content',[]) if c.get('type')=='output_text')
@@ -69,6 +79,8 @@ def chat_ai(payload):
         x['title']=str(x.get('title',''))[:100]
         x['body']=str(x.get('body',''))[:130]
         x['image_prompt']=str(x.get('image_prompt',''))[:600]
+        if len(x['title'] + x['body']) > 80:
+            raise ValueError('AI 腳本有單張超過80字，請重新生成或人工調整')
     return obj
 
 def generate_image(payload):
