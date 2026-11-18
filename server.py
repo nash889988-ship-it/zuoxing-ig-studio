@@ -207,11 +207,14 @@ def chat_ai(payload, key):
     details=str(payload.get('story_details',payload.get('details',''))).strip()[:5500]
     notes=str(payload.get('reading_notes','')).strip()[:2600]
     public_reader_viewpoints=str(payload.get('public_reader_viewpoints','')).strip()[:2500]
+    if notes.startswith('【自動整理：公開讀者觀點，非本人閱讀心得】'):
+        public_reader_viewpoints=(public_reader_viewpoints or notes)[:2500]
+        notes=''  # Do not impersonate public readers as this user's personal experience.
     raw_materials=payload.get('important_materials',[])
     if isinstance(raw_materials,str):materials=[x.strip() for x in raw_materials.splitlines() if x.strip()]
     elif isinstance(raw_materials,list):materials=[str(x).strip() for x in raw_materials if str(x).strip()]
     else:materials=[]
-    materials=materials[:24]
+    materials=[x for x in materials if not x.startswith('【資料不足】')][:24]
     sources=payload.get('sources',[])
     if not isinstance(sources,list):sources=[]
     clean_sources=[]
@@ -221,7 +224,7 @@ def chat_ai(payload, key):
             'id':str(source.get('id',f'source_{i+1}'))[:50],
             'title':str(source.get('title',''))[:160],
             'url':str(source.get('url',''))[:400],
-            'verified_text':str(source.get('verified_text',''))[:6000],
+            'verified_text':('' if str(source.get('verified_text','')).startswith('【資料不足】') else str(source.get('verified_text',''))[:6000]),
             'verified':bool(source.get('verified',False))
         })
     verified_text=' '.join(x['verified_text'] for x in clean_sources).strip()
