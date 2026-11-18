@@ -28,3 +28,13 @@
 .source-row label{margin-bottom:12px}
 .source-row label:last-child{margin-bottom:0}
 #addSourceBtn{margin:0 0 3px}
+
+/* V2.1 Public reader research */
+.reader-fetch-bar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:13px 14px;margin:6px 0 13px;background:linear-gradient(115deg,#eaf3ea,#f8f4e9);border:1px solid #d6e5d7;border-radius:14px}
+.reader-fetch-bar button{white-space:normal}
+#readerFetchStatus{font-size:12px;color:#496453;line-height:1.55}
+.reader-results{border:1px solid #dde5df;border-radius:13px;background:#fcfdfb;padding:13px 15px;margin:0 0 18px;max-height:330px;overflow-y:auto}
+.reader-results[hidden]{display:none}
+.reader-result-line{padding:10px 0;border-top:1px solid #e5ede7;display:grid;gap:4px}
+.reader-result-line a{font-weight:650;font-size:13px;color:#245b43;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.reader-result-line small{font-size:11px;color:#63746b}
