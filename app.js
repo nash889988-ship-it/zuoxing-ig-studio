@@ -34,15 +34,15 @@ function renderBooks(){
   const choose=document.createElement('button');choose.className='secondary';choose.textContent='＋ 以這本書為主題';
   choose.addEventListener('click',()=>{
     resetEditorialForNewTopic();$('#topicInput').value='閱讀話題｜'+item.title;$('#contentTypeInput').value='book_review';$('#materialsInput').value='';$('#readingNotesInput').value='';$('#sourceTitleInput').value=item.source;$('#sourceUrlInput').value=item.source_url;$('#sourceTextInput').value='';
-    $('#detailsInput').value='參考書籍：'+item.title+'\n來源：'+item.source+'\n核對日期：2026/11/18\n官方榜單：'+item.source_url+'\n注意：目前僅取得書名與分類排行，尚無完整內文授權資料；請自行提供摘要或可引用的資訊後，再製作知識性輪播，不能編造書中內容。';
-    activate('write');toast('已帶入書籍主題，請補充可查證的書籍資訊');
+    $('#readerOpinionsInput').value='';$('#detailsInput').value='參考書籍：'+item.title+'\n來源：'+item.source+'\n核對日期：2026/11/18\n官方榜單：'+item.source_url+'\n注意：目前僅取得書名與分類排行，尚無完整內文授權資料；請自行提供摘要或可引用的資訊後，再製作知識性輪播，不能編造書中內容。';
+    activate('write');toast('已帶入書籍主題，正在搜尋公開讀者分享…');fetchReaderResearch();
   });
   const link=document.createElement('a');link.href=item.source_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='查官方榜單 ↗';
   actions.append(choose,link);el.append(pill,h,meta,actions);root.appendChild(el);
  }
 }
 renderBooks();
-function resetEditorialForNewTopic(){state.slides=[];state.images=[];state.current=0;$('#captionInput').value='';$('#hashtagsInput').value='';$('#verificationNotice').hidden=true;$('#extraSources').replaceChildren();$('#scriptMode').textContent='新主題｜待生成';renderScript()}
+function resetEditorialForNewTopic(){state.slides=[];state.images=[];state.current=0;$('#captionInput').value='';$('#hashtagsInput').value='';$('#verificationNotice').hidden=true;$('#extraSources').replaceChildren();$('#readerOpinionsInput').value='';$('#readerResults').replaceChildren();$('#readerResults').hidden=true;$('#readerFetchStatus').textContent='選擇書籍後可自動整理公開來源';$('#scriptMode').textContent='新主題｜待生成';renderScript()}
 function selectTopic(item){resetEditorialForNewTopic();$('#topicInput').value=item.title||item.handle||'';$('#contentTypeInput').value=/旅遊|景點|步道|活動|南投/.test(item.category||'')?'travel':'knowledge';$('#detailsInput').value=`來源：${item.source||item.source_url||'使用者提供'}\n資料日期：${formatTime(item.published||item.observed_at)}\n參考連結：${item.url||''}\n請補充來源內文或可查證的事實，AI 不會僅憑標題猜測。`;$('#sourceTitleInput').value=item.source||'';$('#sourceUrlInput').value=item.url||'';$('#sourceTextInput').value='';$('#materialsInput').value='';$('#readingNotesInput').value='';activate('write');toast('已帶入主題，請貼入真正的來源摘要或素材後生成腳本')}
 function safeResearchItem(item,type){if(!item||typeof item!=='object')return null;let u=type==='accounts'?item.url:item.url; if(!linkOk(u))return null;const o={...item};o.title=String(o.title||o.handle||'未命名').slice(0,220);o.category=String(o.category||'未分類').slice(0,40);o.url=u;o.source=String(o.source||o.source_url||'來源未提供').slice(0,130);['likes','views','comments'].forEach(k=>{if(!Number.isFinite(o[k])||o[k]<0)o[k]=null});return o}
 function renderResearch(){const topicFilter=$('#topicFilter').value;let topics=state.topics.filter(t=>topicFilter==='all'||t.category===topicFilter);$('#topicNum').textContent=state.topics.length;$('#accountNum').textContent=state.accounts.length;const tc=$('#topicCards');tc.replaceChildren();if(!topics.length){tc.innerHTML='<div class="empty">目前沒有符合類別的已取得資料。可更新新聞線索或匯入有來源的資料。</div>'}topics.slice(0,40).forEach(item=>tc.appendChild(createCard(item,false)));const ac=$('#accountCards');ac.replaceChildren();if(!state.accounts.length)ac.innerHTML='<div class="empty">目前無法取得可核實的每週帳號觀察值。請匯入具來源的 IG 帳號資料，不會憑空湊滿十個。</div>';state.accounts.slice(0,10).forEach(item=>ac.appendChild(createCard(item,true)))}
@@ -55,6 +55,45 @@ const baseBodies=['先確認這個主題的來源與適用情境。資料若尚�
 function template(){if($('#contentTypeInput').value==='book_review'){toast('閱讀書評不能套用露營模板；請提供書籍摘要與心得後使用 AI，避免編造內容。');return}let n=Number($('#countInput').value), topic=$('#topicInput').value.trim();if(!topic){toast('請先輸入主題');return}const goal=$('#goalInput').value;state.slides=Array.from({length:n},(_,i)=>({title:i===0?topic.slice(0,25):i===n-1?'下一趟親子旅行，一起出發！':baseTitles[Math.min(i,baseTitles.length-1)],body:i===n-1?goal==='LINE詢問與訂位'?'加入 LINE @wifi558855，詢問露營與訂位資訊。':goal==='增加追蹤'?'追蹤 @interest558855，發現更多南投露營故事。':goal==='留言互動'?'你有哪些露營經驗？歡迎留言和大家分享。':'收藏這份內容，分享給想一起露營的朋友。':baseBodies[Math.min(i,baseBodies.length-1)],image_prompt:topic+'，臺灣露營親子生活自然攝影、無字背景'}));state.images=Array.from({length:n},()=>null);state.current=0;$('#captionInput').value=`🌿 ${topic}\n和家人一起走進南投山林，留下值得記住的時光。\n📩 官賴 @wifi558855\n🔗 訂位 https://forinterest.hexa.tw/`;$('#hashtagsInput').value='#作興趣農場 #南投露營 #親子露營 #露營知識 #親子旅行 #週末去哪玩';$('#scriptMode').textContent='離線模板（可手動編輯）';renderScript();toast('已產生可編輯的模板腳本；請逐張補充真實素材')}
 $('#templateBtn').addEventListener('click',template);
 async function postJSON(url,obj){const key=$('#apiKeyInput').value.trim();if(!/^sk-[A-Za-z0-9_-]{16,250}$/.test(key))throw Error('請先輸入有效的個人 OpenAI API 金鑰');let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-User-OpenAI-Key':key},cache:'no-store',body:JSON.stringify(obj)});let d=await r.json();if(!r.ok)throw Error(d.error||'API 錯誤');return d}
+let readerRequestSerial=0;
+async function fetchReaderResearch(){
+ const topic=$('#topicInput').value.trim();
+ if(!topic){toast('請先選擇書籍或輸入書名');return}
+ const b=$('#fetchReaderBtn'),serial=++readerRequestSerial;
+ b.disabled=true;b.textContent='正在搜尋公開讀者分享…';
+ $('#readerFetchStatus').textContent='搜尋公開讀書心得、書評與書籍中繼資料';
+ try{
+  const response=await fetch('/api/reader-research',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({topic})});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'讀取失敗');
+  if(serial!==readerRequestSerial)return;
+  const reviews=data.reader_viewpoints||[],leads=data.reader_leads||[],publisher=data.publisher_summary;
+  $('#readerOpinionsInput').value=reviews.map((x,i)=>'公開讀者分享摘要 '+(i+1)+'｜'+x.source+'\n'+x.excerpt+'\n來源：'+x.url+'\n（公開摘要，非完整書評；待核對）').join('\n\n');
+  if(publisher){
+   $('#sourceTitleInput').value=publisher.source;
+   $('#sourceUrlInput').value=publisher.url;
+   $('#sourceTextInput').value=publisher.text;
+   const materials=$('#materialsInput');
+   const bullets=['出版社／書目資料中可查的書籍內容（非讀者心得）','將讀者不同評價作為討論角度，勿當成書籍情節事實'];
+   materials.value=[materials.value,...bullets].filter(Boolean).join('\n');
+  }
+  const result=$('#readerResults');result.replaceChildren();
+  const note=document.createElement('p');note.className='fineprint';
+  note.textContent='找到 '+leads.length+' 則公開書評搜尋線索、'+reviews.length+' 則可讀短摘要，'+(publisher?'另取得書籍介紹':'未取得可用書籍介紹')+'。搜尋線索不等於已讀完整書評。';
+  result.appendChild(note);
+  for(const item of leads.slice(0,8)){
+   const line=document.createElement('div');line.className='reader-result-line';
+   const a=document.createElement('a');a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=item.title;
+   const small=document.createElement('small');small.textContent=item.publisher+(item.usable?'｜已取得短摘要':'｜僅有搜尋連結，內容未取得');
+   line.append(a,small);result.appendChild(line);
+  }
+  result.hidden=false;
+  $('#readerFetchStatus').textContent=reviews.length?'已取得公開短摘要｜請核對來源':publisher?'已取得書籍介紹，讀者觀點仍待核實':'只找到搜尋線索，需補充實際內容';
+  toast('公開資料搜尋完成；已區分書籍介紹、讀者摘要與個人心得。');
+ }catch(e){$('#readerFetchStatus').textContent='自動搜尋未完成';toast('讀者資料搜尋失敗：'+e.message)}
+ finally{if(serial===readerRequestSerial){b.disabled=false;b.textContent='↻ 自動搜尋公開讀者分享'}}
+}
+$('#fetchReaderBtn').addEventListener('click',fetchReaderResearch);
 $('#addSourceBtn').addEventListener('click',()=>{
  const host=$('#extraSources');if(host.children.length>=7){toast('最多可填入8組來源');return}
  const box=document.createElement('div');box.className='source-row';
@@ -80,7 +119,7 @@ $('#aiScriptBtn').addEventListener('click',async()=>{
   const payload={
    topic,content_type:$('#contentTypeInput').value,story_details:$('#detailsInput').value,
    important_materials:$('#materialsInput').value.split('\n').map(x=>x.trim()).filter(Boolean),
-   reading_notes:$('#readingNotesInput').value,sources,
+   reading_notes:$('#readingNotesInput').value,public_reader_viewpoints:$('#readerOpinionsInput').value,sources,
    slide_count:Number($('#countInput').value),max_chars_per_slide:120,
    goal:$('#goalInput').value,tone:$('#toneInput').value,visual_style:state.style
   };
