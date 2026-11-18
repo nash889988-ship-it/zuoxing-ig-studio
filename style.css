@@ -20,3 +20,11 @@
 .preview-panel canvas{box-shadow:0 20px 60px #17241b32;border-radius:7px}
 .export-card{box-shadow:0 10px 28px #132c2020}
 @media(max-width:800px){.source-stack{padding:10px}.script-editor{max-height:none;overflow:visible}.spec-row strong{font-size:20px}}
+
+.extra-sources{display:grid;gap:12px;margin:12px 0}
+.source-row{border:1px solid #d9e6dc;background:#f7faf7;border-radius:13px;padding:14px 15px}
+.source-row .row-between{margin-bottom:12px}
+.source-row .row-between strong{font-size:13px;color:#315642}
+.source-row label{margin-bottom:12px}
+.source-row label:last-child{margin-bottom:0}
+#addSourceBtn{margin:0 0 3px}
