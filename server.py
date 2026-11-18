@@ -204,7 +204,7 @@ def generate_image(payload, key):
     prompt=str(payload.get('prompt',''))[:1100]
     style=str(payload.get('style','森林療癒'))[:70]
     if not prompt:raise ValueError('請先輸入圖片內容')
-    spec=f'Generate ONE photorealistic vertical 4:5 editorial background photo for Taiwan family camping Instagram carousel. Visual style: {style}. Image context: {prompt}. No text, no typography, no logos, no watermarks, no text labels. Natural human appearance, realistic Taiwan scenery when relevant. Leave quiet dark space for later headline overlay.'
+    spec=f'Generate ONE refined, professional vertical 4:5 editorial background image for an Instagram carousel. Visual style: {style}. Actual subject and context: {prompt}. Respect the subject: for books use tasteful literary editorial photography or symbolic objects, and do NOT force any camping or Taiwan scenery unless the subject asks for it. Do NOT imitate any copyrighted book cover or real person. No text, no typography, no logos, no watermarks or text labels. Natural credible visual treatment; leave quiet darker negative space for later headline overlay.'
     req={'model':os.environ.get('OPENAI_IMAGE_MODEL','gpt-image-1'),'prompt':spec,'size':'1024x1536','quality':'medium'}
     raw=json.dumps(req,ensure_ascii=False).encode()
     r=get_json('https://api.openai.com/v1/images/generations',{'Authorization':'Bearer '+key,'Content-Type':'application/json'},'POST',raw,100)
