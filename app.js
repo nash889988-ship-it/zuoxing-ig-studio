@@ -54,7 +54,38 @@ const baseTitles=['這個露營知識你知道嗎？','先確認環境與氣象'
 const baseBodies=['先確認這個主題的來源與適用情境。資料若尚未查證，請以實際公告為準，不要只憑網路傳聞安排旅程。','出發前查看中央氣象署預報與目的地最新公告。遇豪雨、強風或警戒資訊，應調整或取消行程。','先列睡眠、照明、飲水、保暖和個人衛生用品清單；按孩子年齡、季節與營區規定調整，不必盲目購買裝備。','先劃定孩子可活動的範圍，遠離水域、爐具與車道；戲水時由成人持續在旁看顧，不讓孩子單獨靠近水邊。','觀察地面排水、樹枝、坡度與通道，不在危險邊坡、乾溪床或警示區搭設帳篷；遵守現場管理人員指示。','炊事器具只在通風良好的戶外安全區使用，帳內不可使用炭火及燃燒式爐具；並妥善保存食物與清理垃圾。','常見誤區是把網路推薦當成現場保證。出發前應核對營區開放、道路通行、預約方式與最新注意事項。','將天氣、道路、預訂、裝備和緊急聯絡資訊重新檢查一次；資訊不足的部分，先向管理單位求證。','將這份露營知識收藏起來，也分享給準備帶孩子出遊的朋友。'];
 function template(){if($('#contentTypeInput').value==='book_review'){toast('閱讀書評不能套用露營模板；請提供書籍摘要與心得後使用 AI，避免編造內容。');return}let n=Number($('#countInput').value), topic=$('#topicInput').value.trim();if(!topic){toast('請先輸入主題');return}const goal=$('#goalInput').value;state.slides=Array.from({length:n},(_,i)=>({title:i===0?topic.slice(0,25):i===n-1?'下一趟親子旅行，一起出發！':baseTitles[Math.min(i,baseTitles.length-1)],body:i===n-1?goal==='LINE詢問與訂位'?'加入 LINE @wifi558855，詢問露營與訂位資訊。':goal==='增加追蹤'?'追蹤 @interest558855，發現更多南投露營故事。':goal==='留言互動'?'你有哪些露營經驗？歡迎留言和大家分享。':'收藏這份內容，分享給想一起露營的朋友。':baseBodies[Math.min(i,baseBodies.length-1)],image_prompt:topic+'，臺灣露營親子生活自然攝影、無字背景'}));state.images=Array.from({length:n},()=>null);state.current=0;$('#captionInput').value=`🌿 ${topic}\n和家人一起走進南投山林，留下值得記住的時光。\n📩 官賴 @wifi558855\n🔗 訂位 https://forinterest.hexa.tw/`;$('#hashtagsInput').value='#作興趣農場 #南投露營 #親子露營 #露營知識 #親子旅行 #週末去哪玩';$('#scriptMode').textContent='離線模板（可手動編輯）';renderScript();toast('已產生可編輯的模板腳本；請逐張補充真實素材')}
 $('#templateBtn').addEventListener('click',template);
-async function postJSON(url,obj){const key=$('#apiKeyInput').value.trim();if(!/^sk-[A-Za-z0-9_-]{16,250}$/.test(key))throw Error('請先輸入有效的個人 OpenAI API 金鑰');let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-User-OpenAI-Key':key},cache:'no-store',body:JSON.stringify(obj)});let d=await r.json();if(!r.ok)throw Error(d.error||'API 錯誤');return d}
+// One API key can be used for repeated calls; persistence is strictly opt-in.
+// Browser localStorage is unencrypted and must not be enabled on shared devices.
+const API_KEY_STORAGE='zuoxing_openai_key_optin_v1';
+const keyField=$('#apiKeyInput'),rememberField=$('#rememberKeyInput'),forgetButton=$('#forgetKeyBtn'),keyStatus=$('#keyStorageStatus');
+function validApiKey(key){return /^sk-[A-Za-z0-9_-]{16,250}$/.test(key)}
+function showKeyStatus(message){keyStatus.textContent=message}
+function removeStoredKey(){try{localStorage.removeItem(API_KEY_STORAGE);return true}catch{return false}}
+function saveKeyIfOptedIn(){
+ const key=keyField.value.trim();
+ if(!rememberField.checked){removeStoredKey();showKeyStatus('目前不會持久儲存金鑰；關閉頁面後需再次貼入。');return}
+ if(!validApiKey(key)){removeStoredKey();showKeyStatus('請先貼入有效的 API 金鑰才能記住。');return}
+ try{localStorage.setItem(API_KEY_STORAGE,key);showKeyStatus('已記住這台裝置的 API 金鑰（瀏覽器未加密儲存）；下次開啟會自動帶入。')}
+ catch{rememberField.checked=false;showKeyStatus('瀏覽器不允許儲存金鑰；本次仍可直接使用。')}
+}
+try{
+ const stored=localStorage.getItem(API_KEY_STORAGE);
+ if(stored && validApiKey(stored)){
+  keyField.value=stored;rememberField.checked=true;
+  showKeyStatus('已從這台裝置恢復你原本的 API 金鑰；不需要重新建立。若不是私人裝置請立即清除。');
+ }else if(stored){removeStoredKey()}
+}catch{showKeyStatus('瀏覽器儲存空間無法使用；貼入金鑰後仍可在本次頁面使用。')}
+rememberField.addEventListener('change',saveKeyIfOptedIn);
+keyField.addEventListener('change',saveKeyIfOptedIn);
+keyField.addEventListener('input',()=>{
+ if(rememberField.checked)showKeyStatus('正在修改金鑰，離開欄位後會更新已記住的內容。');
+});
+forgetButton.addEventListener('click',()=>{
+ removeStoredKey();rememberField.checked=false;keyField.value='';
+ showKeyStatus('已清除這台裝置記住的金鑰，也清空目前輸入欄位。');
+ toast('已清除本裝置儲存的 API 金鑰');
+});
+async function postJSON(url,obj){const key=$('#apiKeyInput').value.trim();if(!validApiKey(key))throw Error('請先輸入有效的個人 OpenAI API 金鑰');let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-User-OpenAI-Key':key},cache:'no-store',body:JSON.stringify(obj)});let d=await r.json();if(!r.ok)throw Error(d.error||'API 錯誤');return d}
 let readerRequestSerial=0;
 const AUTO_READER_MARK='【自動整理：公開讀者觀點，非本人閱讀心得】';
 const NO_REVIEW='【資料不足】尚未取得可核對的公開讀者心得正文，不能自行編造讀後感。';
