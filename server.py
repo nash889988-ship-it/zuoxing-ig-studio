@@ -7,6 +7,7 @@ from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 import os, json, base64, re, hmac, xml.etree.ElementTree as ET, mimetypes
+from urllib.error import HTTPError, URLError
 
 ROOT=Path(__file__).resolve().parent
 HOST=os.environ.get('IG_STUDIO_HOST', '0.0.0.0' if os.environ.get('RENDER') == 'true' else '127.0.0.1')
@@ -59,33 +60,53 @@ def get_news(days=7):
     return {'updated':datetime.now(timezone.utc).isoformat(),'range_days':days,'topics':entries[:100], 'errors':errors,
             'notice':'這是近期新聞/官方報導線索，不是 IG 熱門排名；未取得公開貼文互動量時顯示未取得。', 'accounts':[]}
 
-def chat_ai(payload):
-    key=os.environ.get('OPENAI_API_KEY','').strip()
-    if not key: raise ValueError('尚未設定 OPENAI_API_KEY。可先使用模板腳本。')
+def chat_ai(payload, key):
+    if not key: raise ValueError('請先輸入自己的 OpenAI API 金鑰。')
     n=max(5,min(10,int(payload.get('count',7))))
     topic=str(payload.get('topic',''))[:180]
     details=str(payload.get('details',''))[:2000]
     goal=str(payload.get('goal','分享與收藏'))[:120]
     prompt=f'''你是台灣「作興趣農場」IG輪播腳本編輯。依主題生成 {n} 張IG輪播分鏡。全繁體中文，內容限於已給事實；未知設施價格或人物事蹟不可發明；創作傳說必須標為虛構。每張標題+內文合計最多80個中文字元（標點也計入），建議標題8~16字、內文35~60字。整組至少70%的分鏡聚焦『可核實的露營實用知識、原因、操作步驟、出遊資訊與安全注意事項』；故事/情緒只作為引子與收尾。每張只放一個清楚的知識重點，說明做法、適用情況、常見誤區。資料有來源才寫確定事實；不得捏造營地設施、旅遊最新公告、統計或數據；不確定就明確標記『待查證』。首張以知識鉤子吸引收藏，最後一張符合 {goal} 的CTA。固定品牌IG @interest558855、官方LINE @wifi558855、訂位 https://forinterest.hexa.tw/。主題：{topic}。用戶素材：{details or '未提供'}。只輸出有效JSON物件，格式：{{"slides":[{{"title":"...","body":"...","image_prompt":"描述圖片底圖，不要文字、不要Logo"}}],"caption":"100字內貼文，包含品牌導流","hashtags":["#...",...],"notes":"出版前須查證事項"}}。slides正好{n}項；Hashtag 5~8項。'''
-    req={'model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini'),'input':prompt,'max_output_tokens':3200}
-    data=json.dumps(req,ensure_ascii=False).encode()
-    result=get_json('https://api.openai.com/v1/responses',{'Authorization':'Bearer '+key,'Content-Type':'application/json'},'POST',data,45)
-    text=''.join(c.get('text','') for o in result.get('output',[]) for c in o.get('content',[]) if c.get('type')=='output_text')
-    if not text: raise ValueError('API 未回傳有效文字')
-    text=re.sub(r'^```(?:json)?\s*|\s*```$','',text.strip())
-    obj=json.loads(text)
-    if not isinstance(obj.get('slides'),list) or len(obj['slides'])!=n: raise ValueError('AI 腳本張數不符，請重新生成')
-    for x in obj['slides']:
-        x['title']=str(x.get('title',''))[:100]
-        x['body']=str(x.get('body',''))[:130]
-        x['image_prompt']=str(x.get('image_prompt',''))[:600]
-        if len(x['title'] + x['body']) > 80:
-            raise ValueError('AI 腳本有單張超過80字，請重新生成或人工調整')
-    return obj
+    req={'model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini'),'input':prompt,'max_output_tokens':3800,'text':{'format':{'type':'json_object'}}}
+    # Validate output strictly and retry once if the model misses the format or limits.
+    last_error='AI 未產生符合規格的腳本'
+    for attempt in range(2):
+        if attempt:
+            req['input']=prompt+'\\n你上次的結果不符合規格：'+last_error+'。請修正並確保只輸出合法 JSON。'
+        data=json.dumps(req,ensure_ascii=False).encode()
+        try:
+            result=get_json('https://api.openai.com/v1/responses',
+                {'Authorization':'Bearer '+key,'Content-Type':'application/json'},'POST',data,70)
+        except HTTPError as e:
+            if e.code==401: raise ValueError('API 金鑰無效或沒有授權（401）')
+            if e.code==429: raise ValueError('API 額度不足或觸發速率限制（429）')
+            raise ValueError(f'AI 服務回覆 HTTP {e.code}，請檢查模型權限與額度')
+        text=''.join(c.get('text','') for o in result.get('output',[])
+                     for c in o.get('content',[]) if c.get('type')=='output_text')
+        try:
+            obj=json.loads(re.sub(r'^\x60\x60\x60(?:json)?\\s*|\\s*\x60\x60\x60$','',text.strip()))
+            slides=obj.get('slides')
+            if not isinstance(slides,list) or len(slides)!=n:
+                raise ValueError('分鏡張數應為'+str(n))
+            for x in slides:
+                if not isinstance(x,dict): raise ValueError('分鏡欄位格式錯誤')
+                x['title']=str(x.get('title','')).strip()
+                x['body']=str(x.get('body','')).strip()
+                x['image_prompt']=str(x.get('image_prompt',''))[:600]
+                if not x['title'] or not x['body']: raise ValueError('分鏡有空白標題或內文')
+                if len(x['title']+x['body'])>80: raise ValueError('單張超過80字')
+            if not isinstance(obj.get('hashtags'),list) or not 5<=len(obj['hashtags'])<=8:
+                raise ValueError('Hashtag 必須為5至8項')
+            obj['notes']=str(obj.get('notes',''))
+            obj['caption']=str(obj.get('caption',''))
+            return obj
+        except (ValueError,TypeError,AttributeError) as e:
+            last_error=str(e)
+    raise ValueError('AI 輸出未通過格式與80字檢查：'+last_error)
 
-def generate_image(payload):
-    key=os.environ.get('OPENAI_API_KEY','').strip()
-    if not key:raise ValueError('尚未設定 OPENAI_API_KEY')
+
+def generate_image(payload, key):
+    if not key:raise ValueError('請先輸入自己的 OpenAI API 金鑰')
     prompt=str(payload.get('prompt',''))[:1100]
     style=str(payload.get('style','森林療癒'))[:70]
     if not prompt:raise ValueError('請先輸入圖片內容')
@@ -101,21 +122,22 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT),**kw)
     def do_GET(self):
         if self.path.startswith('/api/status'):
-            self.reply(200,{'ai_configured':False,'research_mode':'即時新聞 RSS；非 Instagram 排名','text_model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini')});return
+            self.reply(200,{'ai_configured':False,'bring_your_own_key':True,'research_mode':'即時新聞 RSS；非 Instagram 排名','text_model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini')});return
         if self.path.startswith('/api/research'):
             self.reply(200,get_news());return
         return super().do_GET()
     def do_POST(self):
         if not self.authenticate():return
-        if self.path in ['/api/script','/api/image']:
-            self.reply(403,{'error':'公開免登入版本暫停伺服端付費 AI 呼叫。研究、模板腳本、照片排版與單張下載仍可使用。'});return
         if self.path not in ['/api/script','/api/image']:
             self.reply(404,{'error':'Not Found'});return
+        key=self.headers.get('X-User-OpenAI-Key','').strip()
+        if not re.fullmatch(r'sk-[A-Za-z0-9_\\-]{16,250}',key):
+            self.reply(403,{'error':'請先在網站輸入有效格式的個人 OpenAI API 金鑰，本站不使用共用金鑰。'});return
         try:
             l=int(self.headers.get('Content-Length','0'))
             if l<=0 or l>MAX_BODY:raise ValueError('請求資料大小不符合限制')
             obj=json.loads(self.rfile.read(l))
-            result=chat_ai(obj) if self.path=='/api/script' else generate_image(obj)
+            result=chat_ai(obj,key) if self.path=='/api/script' else generate_image(obj,key)
             self.reply(200,result)
         except Exception as e:
             self.reply(400,{'error':str(e)[:400]})
