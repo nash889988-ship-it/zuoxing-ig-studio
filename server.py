@@ -112,8 +112,15 @@ def chat_ai(payload, key):
                 '請提供出版社書籍介紹、可查證的故事大綱或章節摘要（建議至少110字）。',
                 '如需第一人稱閱讀心得，請提供你自己的心得；否則改寫成閱讀觀點。'
             ])
-    elif len(details)+len(verified_text)+len(notes)+sum(len(x) for x in materials)<25:
-        return script_status_missing(topic,ctype,['請補充主題的真實背景、知識重點或可靠資料，避免只憑標題發揮。'])
+    else:
+        usable_details='\n'.join(line for line in details.splitlines()
+            if not any(marker in line for marker in (
+              '來源：','資料日期：','參考連結：','請補充來源','請依此來源','待查證')))
+        if len(usable_details)+len(verified_text)+len(notes)+sum(len(x) for x in materials)<35:
+            return script_status_missing(topic,ctype,[
+                '請補充至少一段真實背景、已查證資訊或實際的來源文字。',
+                '新聞標題和原始網址只是研究線索，不能據此編寫未確認細節。'
+            ])
     if not key:raise ValueError('請先輸入個人 OpenAI API 金鑰')
     kind_guidance={
       'book_review':'以已提供的書籍介紹、情節摘要和章節／人物觀點為主，分析閱讀價值與有根據的感想。不得捏造任何具體情節、作者、書評、金句或主觀讀後經驗。',
