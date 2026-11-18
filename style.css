@@ -45,3 +45,11 @@
 .api-key-options .remember-key-choice input[type="checkbox"]{width:17px;height:17px;min-height:unset;margin:0;accent-color:#236343;flex:none}
 .api-key-options #forgetKeyBtn{white-space:normal}
 #keyStorageStatus{margin:0 0 14px;color:#6b5843;line-height:1.65}
+
+/* Select a specific public article and extract source-grounded notes */
+.article-choice-panel{background:linear-gradient(160deg,#f4f8f4,#f8f5ed);border:1px solid #d8e7dc;border-radius:15px;padding:15px 16px;margin:0 0 18px;display:grid;gap:12px}
+.article-choice-panel label{margin:0}
+.article-choice-panel button{justify-self:start;white-space:normal}
+.article-choice-panel .fineprint{margin:0}
+.reader-result-line button{justify-self:start;white-space:normal;margin-top:5px}
+@media(max-width:650px){.article-choice-panel button{width:100%}}
