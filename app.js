@@ -103,57 +103,61 @@ function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
 function textLines(ctx,text,maxWidth){let output=[];for(let raw of String(text||'').split('\n')){if(!raw){output.push('');continue}let line='';for(let ch of raw){if(ctx.measureText(line+ch).width>maxWidth && line){output.push(line);line=ch}else line+=ch}if(line)output.push(line)}return output}
 function drawCover(ctx,img){let sc=Math.max(1080/img.naturalWidth,1350/img.naturalHeight);let w=img.naturalWidth*sc,h=img.naturalHeight*sc;ctx.drawImage(img,(1080-w)/2,(1350-h)/2,w,h)}
 function drawSlide(canvas,i){
- const ctx=canvas.getContext('2d');
- const s=state.slides[i]||{title:'作興趣農場',body:'南投親子露營知識整理'};
- const st=styles[state.style], photo=state.images[i];
- ctx.clearRect(0,0,1080,1350);ctx.fillStyle=st.bg;ctx.fillRect(0,0,1080,1350);
- if(photo){
-  drawCover(ctx,photo);
-  const shade=ctx.createLinearGradient(0,0,0,1350);
-  shade.addColorStop(0,'rgba(8,14,14,.14)');
-  shade.addColorStop(.35,'rgba(8,14,14,.06)');
-  shade.addColorStop(.76,'rgba(8,14,14,.36)');
-  shade.addColorStop(1,'rgba(8,14,14,.61)');
-  ctx.fillStyle=shade;ctx.fillRect(0,0,1080,1350);
+ const ctx=canvas.getContext('2d'),W=1080,H=1350;
+ const slide=state.slides[i]||{title:'作興趣農場',body:'歡迎分享值得收藏的內容'};
+ const style=styles[state.style],image=state.images[i],variant=((i%3)+3)%3;
+ const title=String(slide.title||'').trim(),body=String(slide.body||'').trim();
+ const family='"Noto Sans TC","Microsoft JhengHei",Arial,sans-serif';
+ ctx.save();ctx.clearRect(0,0,W,H);ctx.fillStyle=style.bg;ctx.fillRect(0,0,W,H);
+ if(image){
+  ctx.save();ctx.filter='contrast(1.045) saturate(.93) brightness(.84)';drawCover(ctx,image);ctx.restore();
+  const grad=ctx.createLinearGradient(0,0,variant===1?W:H,variant===1?0:H);
+  grad.addColorStop(0,'rgba(8,13,13,.08)');grad.addColorStop(.5,'rgba(8,13,13,.24)');
+  grad.addColorStop(1,'rgba(8,13,13,.62)');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
  }else{
-  ctx.save();ctx.globalAlpha=.15;ctx.fillStyle=st.accent;ctx.beginPath();
-  ctx.ellipse(830,470,400,570,-.3,0,Math.PI*2);ctx.fill();ctx.restore();
+  const grad=ctx.createLinearGradient(0,0,W,H);
+  grad.addColorStop(0,style.bg);grad.addColorStop(1,'#121d1b');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha=.19;ctx.fillStyle=style.accent;ctx.beginPath();
+  ctx.ellipse(870,390,380,520,-.38,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
  }
- ctx.textBaseline='top';
- const family='"Noto Sans TC","Microsoft JhengHei",sans-serif';
- const head=String(s.title||'').trim();
- const body=String(s.body||'').trim();
- // Professional photograph-first layout: no top-left brand or logo, no slide index.
- // 50% translucent black panel with generous padding; auto-fit to avoid clipped 80-character scripts.
- const panelX=57,panelW=966,padX=47,innerW=panelW-2*padX;
- let titleSize=70,bodySize=37,titleLines=[],bodyLines=[],lineTitle=0,lineBody=0,panelH=0;
- const available=900;
- for(let attempt=0;attempt<30;attempt++){
-  ctx.font='800 '+titleSize+'px '+family;
-  titleLines=textLines(ctx,head,innerW);
-  ctx.font='500 '+bodySize+'px '+family;
-  bodyLines=textLines(ctx,body,innerW);
-  lineTitle=Math.round(titleSize*1.3);lineBody=Math.round(bodySize*1.48);
-  panelH=72+titleLines.length*lineTitle+30+bodyLines.length*lineBody+74;
-  if(panelH<=available)break;
-  if(titleSize>45)titleSize-=3;
-  if(bodySize>25)bodySize-=2;
-  if(titleSize<=45&&bodySize<=25)break;
+ // Three editorial layouts: A = lower inset, B = left editorial column, C = center feature.
+ // Never stamp a top-left logo, sequence number or extra words onto the exported image.
+ const presets=[
+  {x:59,w:962,maxH:820,anchor:'bottom',minY:255,pad:49},
+  {x:60,w:830,maxH:940,anchor:'middle',minY:175,pad:51},
+  {x:95,w:890,maxH:860,anchor:'middle',minY:205,pad:55}
+ ];
+ const p=presets[variant],inner=p.w-2*p.pad;
+ let titleSize=variant===0?58:54, bodySize=variant===0?30:29;
+ let titleLines=[],bodyLines=[],titleLineH=0,bodyLineH=0,panelH=0;
+ const metrics=()=>{
+  ctx.font='800 '+titleSize+'px '+family;titleLines=textLines(ctx,title,inner);
+  ctx.font='500 '+bodySize+'px '+family;bodyLines=textLines(ctx,body,inner);
+  titleLineH=Math.round(titleSize*1.24);bodyLineH=Math.round(bodySize*1.52);
+  panelH=61+titleLines.length*titleLineH+28+bodyLines.length*bodyLineH+78;
+ };
+ metrics();
+ for(let n=0;n<50&&panelH>p.maxH;n++){
+  if(titleSize>38)titleSize=Math.max(38,titleSize-2);
+  if(bodySize>23)bodySize=Math.max(23,bodySize-1);
+  metrics();
  }
- panelH=Math.min(available,panelH);
- const y=Math.max(235,1208-panelH);
- ctx.fillStyle='rgba(0,0,0,.50)';rounded(ctx,panelX,y,panelW,panelH,28);ctx.fill();
- ctx.fillStyle=st.accent;ctx.fillRect(panelX+padX,y+36,86,5);
- let cursor=y+59;
- ctx.fillStyle='#fff';ctx.font='800 '+titleSize+'px '+family;
- for(let line of titleLines){ctx.fillText(line,panelX+padX,cursor);cursor+=lineTitle}
- cursor+=22;ctx.font='500 '+bodySize+'px '+family;ctx.fillStyle='#f6f6f3';
- for(let line of bodyLines){ctx.fillText(line,panelX+padX,cursor);cursor+=lineBody}
- // Fixed brand handle only in bottom right, outside photo text panel.
- ctx.font='700 29px '+family;ctx.fillStyle='#fff';ctx.shadowColor='rgba(0,0,0,.6)';
- ctx.shadowBlur=8;const handle='@interest558855';
- ctx.fillText(handle,1010-ctx.measureText(handle).width,1280);
- ctx.shadowBlur=0;
+ const panelY=p.anchor==='bottom'?Math.max(p.minY,1197-panelH):Math.max(p.minY,Math.round((1220-panelH)/2));
+ ctx.fillStyle='rgba(0,0,0,.50)';rounded(ctx,p.x,panelY,p.w,panelH,variant===2?22:28);ctx.fill();
+ ctx.fillStyle=style.accent;ctx.fillRect(p.x+p.pad,panelY+34,variant===2?58:82,5);
+ let cursor=panelY+57;
+ ctx.textBaseline='top';ctx.fillStyle='#fff';ctx.font='800 '+titleSize+'px '+family;
+ for(const line of titleLines){ctx.fillText(line,p.x+p.pad,cursor);cursor+=titleLineH}
+ cursor+=25;ctx.font='500 '+bodySize+'px '+family;ctx.fillStyle='rgba(255,255,255,.96)';
+ for(const line of bodyLines){ctx.fillText(line,p.x+p.pad,cursor);cursor+=bodyLineH}
+ // Thin editorial detail below image; the handle is the only permanent export branding.
+ ctx.fillStyle='rgba(255,255,255,.38)';ctx.fillRect(66,1245,947,1);
+ ctx.font='500 23px '+family;ctx.fillStyle='rgba(255,255,255,.9)';
+ ctx.shadowColor='rgba(0,0,0,.64)';ctx.shadowBlur=7;
+ const handle='@interest558855';ctx.fillText(handle,1012-ctx.measureText(handle).width,1274);
+ ctx.restore();
 }
 function renderPreview(){drawSlide($('#previewCanvas'),state.current)}
 function downloadSlide(i){if(!state.slides.length){toast('請先產生腳本');return}if(Array.from((state.slides[i].title||'')+(state.slides[i].body||'')).length>120){toast('這張圖超過120字，請先精簡內容再下載。');return}let canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;drawSlide(canvas,i);canvas.toBlob(blob=>{if(!blob){toast('圖片轉檔失敗');return}let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=`作興趣_IG輪播_${String(i+1).padStart(2,'0')}.png`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)},'image/png')}
