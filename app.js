@@ -54,6 +54,20 @@ const baseBodies=['先確認這個主題的來源與適用情境。資料若尚�
 function template(){if($('#contentTypeInput').value==='book_review'){toast('閱讀書評不能套用露營模板；請提供書籍摘要與心得後使用 AI，避免編造內容。');return}let n=Number($('#countInput').value), topic=$('#topicInput').value.trim();if(!topic){toast('請先輸入主題');return}const goal=$('#goalInput').value;state.slides=Array.from({length:n},(_,i)=>({title:i===0?topic.slice(0,25):i===n-1?'下一趟親子旅行，一起出發！':baseTitles[Math.min(i,baseTitles.length-1)],body:i===n-1?goal==='LINE詢問與訂位'?'加入 LINE @wifi558855，詢問露營與訂位資訊。':goal==='增加追蹤'?'追蹤 @interest558855，發現更多南投露營故事。':goal==='留言互動'?'你有哪些露營經驗？歡迎留言和大家分享。':'收藏這份內容，分享給想一起露營的朋友。':baseBodies[Math.min(i,baseBodies.length-1)],image_prompt:topic+'，臺灣露營親子生活自然攝影、無字背景'}));state.images=Array.from({length:n},()=>null);state.current=0;$('#captionInput').value=`🌿 ${topic}\n和家人一起走進南投山林，留下值得記住的時光。\n📩 官賴 @wifi558855\n🔗 訂位 https://forinterest.hexa.tw/`;$('#hashtagsInput').value='#作興趣農場 #南投露營 #親子露營 #露營知識 #親子旅行 #週末去哪玩';$('#scriptMode').textContent='離線模板（可手動編輯）';renderScript();toast('已產生可編輯的模板腳本；請逐張補充真實素材')}
 $('#templateBtn').addEventListener('click',template);
 async function postJSON(url,obj){const key=$('#apiKeyInput').value.trim();if(!/^sk-[A-Za-z0-9_-]{16,250}$/.test(key))throw Error('請先輸入有效的個人 OpenAI API 金鑰');let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-User-OpenAI-Key':key},cache:'no-store',body:JSON.stringify(obj)});let d=await r.json();if(!r.ok)throw Error(d.error||'API 錯誤');return d}
+$('#addSourceBtn').addEventListener('click',()=>{
+ const host=$('#extraSources');if(host.children.length>=7){toast('最多可填入8組來源');return}
+ const box=document.createElement('div');box.className='source-row';
+ box.innerHTML='<div class="row-between"><strong>其他資料來源</strong><button type="button" class="secondary small remove-source">移除</button></div><label>來源名稱<input class="extra-source-title" placeholder="例：出版社介紹、官方旅遊公告"/></label><label>原始網址<input class="extra-source-url" placeholder="https://..."/></label><label>已閱讀的實際摘要或段落<textarea class="extra-source-text" rows="3" placeholder="貼入可以作為內容依據的資訊，勿只貼網址"></textarea></label>';
+ box.querySelector('.remove-source').addEventListener('click',()=>box.remove());
+ host.appendChild(box);
+});
+function collectExtraSources(){
+ return [...document.querySelectorAll('.source-row')].map((box,i)=>({
+  id:'source_'+(i+2),title:box.querySelector('.extra-source-title').value.trim(),
+  url:box.querySelector('.extra-source-url').value.trim(),
+  verified_text:box.querySelector('.extra-source-text').value.trim(),verified:false
+ })).filter(x=>x.title||x.url||x.verified_text);
+}
 $('#aiScriptBtn').addEventListener('click',async()=>{
  const topic=$('#topicInput').value.trim();if(!topic){toast('請先輸入主題');return}
  const b=$('#aiScriptBtn');b.disabled=true;b.textContent='AI 正在核對資料並撰寫…';
@@ -61,7 +75,7 @@ $('#aiScriptBtn').addEventListener('click',async()=>{
  try{
   const sourceUrl=$('#sourceUrlInput').value.trim(),sourceText=$('#sourceTextInput').value.trim(),sourceTitle=$('#sourceTitleInput').value.trim();
   if(sourceUrl&&!linkOk(sourceUrl))throw Error('來源網址必須是有效的 HTTP/HTTPS 網址');
-  const sources=(sourceUrl||sourceText||sourceTitle)?[{id:'source_1',title:sourceTitle,url:sourceUrl,verified_text:sourceText,verified:false}]:[];
+  const sources=[...((sourceUrl||sourceText||sourceTitle)?[{id:'source_1',title:sourceTitle,url:sourceUrl,verified_text:sourceText,verified:false}]:[]),...collectExtraSources()];if(sources.some(x=>x.url&&!linkOk(x.url)))throw Error('有資料來源網址格式不正確，請檢查網址');
   const payload={
    topic,content_type:$('#contentTypeInput').value,story_details:$('#detailsInput').value,
    important_materials:$('#materialsInput').value.split('\n').map(x=>x.trim()).filter(Boolean),
