@@ -99,37 +99,16 @@ def generate_image(payload):
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT),**kw)
-    def authenticate(self):
-        # On a public service require login even for static assets; otherwise anonymous
-        # users could exhaust the paid API budget via /api/script and /api/image.
-        if not ACCESS_PASSWORD:
-            if os.environ.get('RENDER') == 'true':
-                self.send_error(503,'Set IG_STUDIO_PASSWORD in Render environment settings')
-                return False
-            return True
-        authorization=self.headers.get('Authorization','')
-        try:
-            scheme, token=authorization.split(' ',1)
-            decoded=base64.b64decode(token,validate=True).decode('utf-8') if scheme.lower()=='basic' else ''
-            username, supplied_password=decoded.split(':',1)
-        except (ValueError,UnicodeError,base64.binascii.Error):
-            supplied_password=''
-        if hmac.compare_digest(supplied_password, ACCESS_PASSWORD):return True
-        self.send_response(401)
-        self.send_header('WWW-Authenticate','Basic realm="Zuoxing IG Studio", charset="UTF-8"')
-        self.send_header('Cache-Control','no-store')
-        self.send_header('Content-Length','0')
-        self.end_headers()
-        return False
     def do_GET(self):
-        if not self.authenticate():return
         if self.path.startswith('/api/status'):
-            self.reply(200,{'ai_configured':bool(os.environ.get('OPENAI_API_KEY')),'research_mode':'即時新聞 RSS；非 Instagram 排名','text_model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini')});return
+            self.reply(200,{'ai_configured':False,'research_mode':'即時新聞 RSS；非 Instagram 排名','text_model':os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini')});return
         if self.path.startswith('/api/research'):
             self.reply(200,get_news());return
         return super().do_GET()
     def do_POST(self):
         if not self.authenticate():return
+        if self.path in ['/api/script','/api/image']:
+            self.reply(403,{'error':'公開免登入版本暫停伺服端付費 AI 呼叫。研究、模板腳本、照片排版與單張下載仍可使用。'});return
         if self.path not in ['/api/script','/api/image']:
             self.reply(404,{'error':'Not Found'});return
         try:
@@ -151,5 +130,5 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
 if __name__=='__main__':
-    print(f'作興趣 AI IG 輪播設計中心 http://{HOST}:{PORT} | AI:'+('已設定' if os.environ.get('OPENAI_API_KEY') else '未設定（模板可用）'))
+    print(f'作興趣 AI IG 輪播設計中心 http://{HOST}:{PORT} | 公開免登入模式（付費 AI API 禁用）')
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
