@@ -19,6 +19,29 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function linkOk(url){try{let u=new URL(url);return ['https:','http:'].includes(u.protocol)}catch{return false}}
 function formatTime(x){if(!x)return'日期未取得';let d=new Date(x);return isNaN(d)?String(x):new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(d)}
 const metric=x=>(typeof x==='number'&&Number.isFinite(x))?x.toLocaleString('zh-TW'):'未取得';
+const bookMonthSnapshot=[{"rank":1,"title":"臺灣漫遊錄","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":2,"title":"我的黑道姑姑：教我的99件事","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":3,"title":"都市傳說第三部3：密室逃脫","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":4,"title":"老派少女購物路線〖暢銷紀念版〗","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":5,"title":"百六：第二卷 萬廟之都（隨書附贈劍指沉浸式體驗卡）","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":6,"title":"日花閃爍（十刷限量結穗版）","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":7,"title":"賣瓜的人〖文壇年度耀眼新星〗","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":8,"title":"截金","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":9,"title":"早春晴朗〖01－04套書〗：Netflix熱播同名電視劇原著小說","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"},{"rank":10,"title":"工頭堅的京都時光2（限量作者親簽版）：近現代篇","source":"博客來｜本月暢銷榜・華文創作","source_url":"https://activity.books.com.tw/crosscat/show/books66_top","observed_at":"2026-11-18","category":"華文創作","rank_scope":"單一書店・單一分類月榜；非全台統計"}];
+function renderBooks(){
+ const root=$('#bookCards');if(!root)return;
+ root.replaceChildren();
+ $('#bookNum').textContent=String(bookMonthSnapshot.length);
+ for(const item of bookMonthSnapshot){
+  const el=document.createElement('article');el.className='research-card';
+  const pill=document.createElement('span');pill.className='pill';pill.textContent='TOP '+item.rank+' ｜ 華文創作';
+  const h=document.createElement('h3');h.textContent=item.title;
+  const meta=document.createElement('div');meta.className='meta';meta.textContent='來源：'+item.source+'\n資料核對：2026/11/18｜固定快照，最新名次請查原始榜單';
+  meta.style.whiteSpace='pre-line';
+  const actions=document.createElement('div');actions.className='card-actions';
+  const choose=document.createElement('button');choose.className='secondary';choose.textContent='＋ 以這本書為主題';
+  choose.addEventListener('click',()=>{
+    $('#topicInput').value='閱讀話題｜'+item.title;
+    $('#detailsInput').value='參考書籍：'+item.title+'\n來源：'+item.source+'\n核對日期：2026/11/18\n官方榜單：'+item.source_url+'\n注意：目前僅取得書名與分類排行，尚無完整內文授權資料；請自行提供摘要或可引用的資訊後，再製作知識性輪播，不能編造書中內容。';
+    activate('write');toast('已帶入書籍主題，請補充可查證的書籍資訊');
+  });
+  const link=document.createElement('a');link.href=item.source_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='查官方榜單 ↗';
+  actions.append(choose,link);el.append(pill,h,meta,actions);root.appendChild(el);
+ }
+}
+renderBooks();
 function selectTopic(item){$('#topicInput').value=item.title||item.handle||'';$('#detailsInput').value=`來源：${item.source||item.source_url||'使用者提供'}\n資料日期：${formatTime(item.published||item.observed_at)}\n參考連結：${item.url||''}\n請依此來源核實事實，勿推斷來源未明示的內容。`;activate('write');toast('已帶入主題，請檢查素材後產生腳本')}
 function safeResearchItem(item,type){if(!item||typeof item!=='object')return null;let u=type==='accounts'?item.url:item.url; if(!linkOk(u))return null;const o={...item};o.title=String(o.title||o.handle||'未命名').slice(0,220);o.category=String(o.category||'未分類').slice(0,40);o.url=u;o.source=String(o.source||o.source_url||'來源未提供').slice(0,130);['likes','views','comments'].forEach(k=>{if(!Number.isFinite(o[k])||o[k]<0)o[k]=null});return o}
 function renderResearch(){const topicFilter=$('#topicFilter').value;let topics=state.topics.filter(t=>topicFilter==='all'||t.category===topicFilter);$('#topicNum').textContent=state.topics.length;$('#accountNum').textContent=state.accounts.length;const tc=$('#topicCards');tc.replaceChildren();if(!topics.length){tc.innerHTML='<div class="empty">目前沒有符合類別的已取得資料。可更新新聞線索或匯入有來源的資料。</div>'}topics.slice(0,40).forEach(item=>tc.appendChild(createCard(item,false)));const ac=$('#accountCards');ac.replaceChildren();if(!state.accounts.length)ac.innerHTML='<div class="empty">目前無法取得可核實的每週帳號觀察值。請匯入具來源的 IG 帳號資料，不會憑空湊滿十個。</div>';state.accounts.slice(0,10).forEach(item=>ac.appendChild(createCard(item,true)))}
