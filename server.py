@@ -206,6 +206,7 @@ def chat_ai(payload, key):
     n=max(5,min(10,int(payload.get('slide_count',payload.get('count',7)))))
     details=str(payload.get('story_details',payload.get('details',''))).strip()[:5500]
     notes=str(payload.get('reading_notes','')).strip()[:2600]
+    public_reader_viewpoints=str(payload.get('public_reader_viewpoints','')).strip()[:2500]
     raw_materials=payload.get('important_materials',[])
     if isinstance(raw_materials,str):materials=[x.strip() for x in raw_materials.splitlines() if x.strip()]
     elif isinstance(raw_materials,list):materials=[str(x).strip() for x in raw_materials if str(x).strip()]
@@ -262,6 +263,7 @@ def chat_ai(payload, key):
 主題故事與背景資料（使用者提供，可能未查證）：{details or '未提供'}
 一定要涵蓋的素材：{json.dumps(materials,ensure_ascii=False)}
 使用者真實閱讀心得／體驗：{notes or '未提供，不得假裝讀過'}
+公開讀者網頁觀點短摘要（非使用者本人心得；僅作為標示來源的第三方意見，不代表書籍事實）：{public_reader_viewpoints or '未取得'}
 提供的來源與文字資料：{json.dumps(clean_sources,ensure_ascii=False)}
 文字語氣：{tone}。行銷目標：{goal}。
 編輯要求：
@@ -269,7 +271,7 @@ def chat_ai(payload, key):
 2. 第一張勾起想閱讀的好奇心；中間循序整理可靠大綱、知識或分析；最後一張摘要、共鳴或適當的 CTA。不要空泛句，不重複。
 3. 高比例內容應為可靠知識、已提供資料的具體解析；勿臆造人物、章節、價格、統計、旅行開放消息。
 4. 只有來源網址但未提供其文章文字時，不要假裝已經閱讀該網址。若資料不足以支持特定說法，使用審慎描述並在 verification_notes 說明。
-5. 只有使用者明確提供閱讀心得，才可用第一人稱「我讀後」。不以你自己的臆想假扮讀者。
+5. 只有使用者明確提供閱讀心得，才可用第一人稱「我讀後」。不以你自己的臆想假扮讀者。第三方讀者評論只能寫為『有讀者提到／某公開書評觀察』，不可將其當成使用者自身心得或權威事實。不要直接照抄他人評論長段。
 6. 每張 image_prompt 應為貼合該張內容、無文字無標誌的攝影或雜誌風背景，不要仿冒書籍封面、名人照片；每張 source_ids 是引用的已提供來源 id 陣列，未用來源時空陣列。
 7. 固定 IG：@interest558855；LINE：@wifi558855；訂位：https://forinterest.hexa.tw/。非露營／非品牌類主題不要硬塞農場訂位文案，品牌只放在適當 CTA。
 8. 生成適當貼文 caption、5–8 個 hashtags、待查證事項 verification_notes。
