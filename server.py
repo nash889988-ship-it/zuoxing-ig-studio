@@ -2,7 +2,7 @@
 """Local-only web server for 作興趣 IG Studio. Python standard library."""
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 from urllib.parse import quote, urlsplit
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
@@ -107,6 +107,125 @@ def fetch_public_description(url):
         return {'url':final,'page_title':short_text(parser.title,180),
                 'description':short_text(parser.description,280)}
     except Exception:return None
+
+class ArticleBodyParser(HTMLParser):
+    """Extract readable public article text, not a paywall or JS-only document."""
+    def __init__(self):
+        super().__init__();self.stack=[];self.skip=0;self.blocks=[];self.current='';self.title='';self.heading=False
+    def handle_starttag(self,tag,attrs):
+        if tag in ('script','style','noscript','nav','footer','header','aside','form','svg'):
+            self.skip+=1
+        if tag in ('p','h1','h2','h3','blockquote','li') and not self.skip:
+            self.current=''
+        if tag in ('title',):self.heading=True
+        self.stack.append(tag)
+    def handle_data(self,data):
+        if self.skip:return
+        tag=self.stack[-1] if self.stack else ''
+        if self.heading and tag=='title':self.title+=data
+        if any(t in ('p','h1','h2','h3','blockquote','li') for t in self.stack):
+            self.current+=data
+    def handle_endtag(self,tag):
+        if tag in ('p','h1','h2','h3','blockquote','li') and not self.skip:
+            p=short_text(self.current,1600)
+            if len(p)>=24 and not re.search(r'(cookie|隱私權政策|登入.*註冊|相關文章|您可能也喜歡|廣告合作)',p,re.I):
+                self.blocks.append(p)
+            self.current=''
+        if tag=='title':self.heading=False
+        if tag in ('script','style','noscript','nav','footer','header','aside','form','svg') and self.skip:
+            self.skip-=1
+        if self.stack:
+            # Recover from common malformed HTML by unwinding to the closing element.
+            if tag in self.stack:
+                idx=len(self.stack)-1-self.stack[::-1].index(tag)
+                del self.stack[idx:]
+            else:self.stack.pop()
+
+class PublicOnlyRedirect(HTTPRedirectHandler):
+    def __init__(self):self.hops=0
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        self.hops+=1
+        if self.hops>3 or not safe_public_url(newurl):
+            raise ValueError('文章轉址不安全或次數過多，已停止讀取')
+        return super().redirect_request(req,fp,code,msg,headers,newurl)
+
+def read_selected_article(url):
+    if not safe_public_url(url):
+        raise ValueError('請提供公開的 HTTPS 文章網址，不可使用內部網路或本機位址')
+    try:
+        req=Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; ZuoxingEditorialResearch/2.0)',
+                                 'Accept':'text/html,application/xhtml+xml'})
+        with build_opener(PublicOnlyRedirect()).open(req,timeout=12) as response:
+            final=response.geturl()
+            if not safe_public_url(final):raise ValueError('不允許讀取此轉址網址')
+            ctype=response.headers.get('Content-Type','').lower()
+            if 'text/html' not in ctype and 'application/xhtml+xml' not in ctype:
+                raise ValueError('目前僅支援可公開閱讀的 HTML 文章')
+            content=response.read(600_000)
+            enc=response.headers.get_content_charset() or 'utf-8'
+        parser=ArticleBodyParser()
+        parser.feed(content.decode(enc,'replace'))
+        uniq=[];seen=set()
+        for block in parser.blocks:
+            key=block[:90]
+            if key in seen:continue
+            seen.add(key);uniq.append(block)
+        article='\n'.join(uniq)[:12500]
+        if len(article)<240:
+            raise ValueError('這篇文章的可讀正文不足，可能需要登入、禁止抓取，或由 JavaScript 載入。請換公開文章網址。')
+        return {'url':final,'title':short_text(parser.title,180),'text':article,'extracted_chars':len(article)}
+    except HTTPError as e:
+        if e.code in (401,403):raise ValueError('網站限制讀取（401/403），請改選可公開閱讀的文章')
+        if e.code==429:raise ValueError('對方網站限制擷取頻率，請稍後再試')
+        raise ValueError(f'文章網站回傳 HTTP {e.code}，無法擷取正文')
+    except (URLError,TimeoutError) as e:raise ValueError('無法連線至文章網站，請稍後重試')
+ 
+def summarize_selected_article(payload,key):
+    if not re.fullmatch(r'sk-[A-Za-z0-9_\-]{16,250}',key):
+        raise ValueError('請先在網站輸入有效 OpenAI API 金鑰，以整理選定文章的正文')
+    url=str(payload.get('url','')).strip()[:1200]
+    if not url:raise ValueError('請先選擇搜尋到的文章，或貼入公開文章網址')
+    article=read_selected_article(url)
+    topic=str(payload.get('topic','')).strip()[:180]
+    prompt=f"""你是繁體中文編輯，正在閱讀一篇指定的公開文章正文，而不是搜尋結果。只能根據下列真正抓取的正文整理內容，不能使用推測或額外補充。
+主題：{topic}
+文章標題：{article['title']}
+正文內容：
+{article['text']}
+請輸出純 JSON 物件，鍵：
+"materials": 3–6 個精簡重點字串，每項不超過70字。只挑文章確實說到的事，不需硬湊。
+"reader_viewpoint": 90–230字的第三人稱閱讀觀點提要。如果是讀者書評，寫『這篇讀者分享提到…』；若非讀者書評，寫『這篇文章提出…』。不可使用『我讀完』『我的心得』冒充使用者親身體驗。只做意譯摘要，不照抄原文。
+"source_summary": 150–350字的正文摘要，忠於事實，不能大量逐字重現原文，不可混入其他網站或臆測。資料不足可以簡短。
+"article_type": "reader_review" 或 "other"。是否為書評需由正文支持。
+所有文字必須是臺灣繁體中文，標示尚待核對的事實；不要臆造作者姓名、書籍情節、個人經歷、引言。
+"""
+    model=os.environ.get('OPENAI_TEXT_MODEL','gpt-4.1-mini')
+    req={'model':model,'input':prompt,'max_output_tokens':2100,'text':{'format':{'type':'json_object'}}}
+    try:
+        result=get_json('https://api.openai.com/v1/responses',
+                        {'Authorization':'Bearer '+key,'Content-Type':'application/json'},'POST',
+                        json.dumps(req,ensure_ascii=False).encode(),70)
+    except HTTPError as e:
+        if e.code==401:raise ValueError('API 金鑰無效或缺少模型權限（401）')
+        if e.code==429:raise ValueError('OpenAI API 餘額或呼叫頻率限制（429），請檢查帳戶額度')
+        raise ValueError(f'AI 摘要服務回傳 HTTP {e.code}')
+    text=''.join(c.get('text','') for out in result.get('output',[])
+                 for c in out.get('content',[]) if c.get('type')=='output_text')
+    try:
+        data=json.loads(text)
+        materials=data.get('materials',[])
+        if not isinstance(materials,list):raise ValueError('重要素材欄位錯誤')
+        materials=[str(v).strip()[:100] for v in materials if str(v).strip()][:6]
+        summary=str(data.get('source_summary','')).strip()[:600]
+        opinion=str(data.get('reader_viewpoint','')).strip()[:450]
+        if not summary or not materials or not opinion:raise ValueError('AI 未產生完整摘要')
+        return {'status':'ready','article_title':article['title'],'url':article['url'],
+                'article_type':'reader_review' if data.get('article_type')=='reader_review' else 'other',
+                'extracted_chars':article['extracted_chars'],
+                'materials':materials,'reader_viewpoint':opinion,'source_summary':summary,
+                'notes':'已讀取所選公開文章正文並整理（非全文複製）；摘要由 AI 生成，發文前請對照原文。'}
+    except (ValueError,TypeError,AttributeError):
+        raise ValueError('AI 未能產生有效的文章提要，請重新嘗試')
 
 def reader_research(payload):
     """Collect attributable public reader-review leads; do not claim the book was read."""
@@ -353,7 +472,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(200,get_news());return
         return super().do_GET()
     def do_POST(self):
-        if self.path not in ['/api/script','/api/image','/api/reader-research']:
+        if self.path not in ['/api/script','/api/image','/api/reader-research','/api/article-extract']:
             self.reply(404,{'error':'Not Found'});return
         if self.path=='/api/reader-research':
             try:
@@ -362,6 +481,15 @@ class Handler(SimpleHTTPRequestHandler):
                 payload=json.loads(self.rfile.read(length))
                 self.reply(200,reader_research(payload))
             except Exception as e:self.reply(400,{'error':str(e)[:250]})
+            return
+        if self.path=='/api/article-extract':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if length<2 or length>12000:raise ValueError('請求資料超出限制')
+                data=json.loads(self.rfile.read(length))
+                key=self.headers.get('X-User-OpenAI-Key','').strip()
+                self.reply(200,summarize_selected_article(data,key))
+            except Exception as e:self.reply(400,{'error':str(e)[:300]})
             return
         key=self.headers.get('X-User-OpenAI-Key','').strip()
         if not re.fullmatch(r'sk-[A-Za-z0-9_\\-]{16,250}',key):
