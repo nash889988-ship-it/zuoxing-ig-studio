@@ -241,13 +241,55 @@ function renderScript(){let root=$('#slideEditor');root.replaceChildren();$('#sl
 $('#copyCaptionBtn').addEventListener('click',async()=>{let text=$('#captionInput').value+'\n\n'+$('#hashtagsInput').value;try{await navigator.clipboard.writeText(text);toast('已複製貼文與 Hashtag')}catch{toast('瀏覽器限制剪貼簿，請手動選取文案複製')}});
 $('#toDesignBtn').addEventListener('click',()=>{if(!state.slides.length){toast('請先產生輪播腳本');return}activate('design')});
 const pick=$('#stylePicker');Object.entries(styles).forEach(([id,s])=>{let b=document.createElement('button');b.className='style-swatch'+(state.style===id?' selected':'');b.style.background=s.bg;b.style.color=s.fg;b.innerHTML=`<strong>${esc(s.name)}</strong><span>故事開始</span>`;b.addEventListener('click',()=>{state.style=id;$$('.style-swatch').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');renderPreview()});pick.appendChild(b)});
-function renderEditor(){const sel=$('#slideSelect');sel.replaceChildren();state.slides.forEach((s,i)=>{let o=document.createElement('option');o.value=i;o.textContent=`分鏡 ${i+1}｜${s.title.slice(0,16)}`;sel.appendChild(o)});if(!state.slides.length){renderPreview();return}state.current=Math.max(0,Math.min(state.current,state.slides.length-1));sel.value=state.current;const s=state.slides[state.current];$('#editTitle').value=s.title;$('#editBody').value=s.body;$('#editImagePrompt').value=s.image_prompt;$('#previewIndex').textContent=`${state.current+1} / ${state.slides.length}（僅編輯介面顯示）`;renderPreview()}
+function renderEditor(){const sel=$('#slideSelect');sel.replaceChildren();state.slides.forEach((s,i)=>{let o=document.createElement('option');o.value=i;o.textContent=`分鏡 ${i+1}｜${s.title.slice(0,16)}`;sel.appendChild(o)});if(!state.slides.length){renderPreview();return}state.current=Math.max(0,Math.min(state.current,state.slides.length-1));sel.value=state.current;const s=state.slides[state.current];$('#editTitle').value=s.title;$('#editBody').value=s.body;$('#editImagePrompt').value=s.image_prompt;$('#previewIndex').textContent=`${state.current+1} / ${state.slides.length}（僅編輯介面顯示）`;renderPreview();syncCleanReview()}
 $('#slideSelect').addEventListener('change',()=>{state.current=Number($('#slideSelect').value);renderEditor()});['editTitle','editBody','editImagePrompt'].forEach(id=>$('#'+id).addEventListener('input',()=>{let s=state.slides[state.current];if(!s)return;s.title=$('#editTitle').value;s.body=$('#editBody').value;s.image_prompt=$('#editImagePrompt').value;renderPreview()}));
 $('#prevBtn').addEventListener('click',()=>{state.current=(state.current-1+state.slides.length)%state.slides.length;renderEditor()});$('#nextBtn').addEventListener('click',()=>{state.current=(state.current+1)%state.slides.length;renderEditor()});
 $('#photosInput').addEventListener('change',async e=>{const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,15);state.uploads=[];for(let f of files){try{let url=URL.createObjectURL(f);let image=await loadImage(url);state.uploads.push(image)}catch{}}$('#photosStatus').textContent=`已選 ${state.uploads.length} 張照片，僅在本機瀏覽器處理`;toast(`已讀取 ${state.uploads.length} 張照片，按「依序套用上傳照片」即可套用`)});
-$('#applyPhotos').addEventListener('click',()=>{if(!state.slides.length||!state.uploads.length){toast('請先產生腳本並上傳照片');return}state.images=state.slides.map((_,i)=>state.uploads[i%state.uploads.length]);renderPreview();toast(`已套用 ${state.uploads.length} 張上傳照片；可逐張下載`) });
+$('#applyPhotos').addEventListener('click',()=>{if(!state.slides.length||!state.uploads.length){toast('請先產生腳本並上傳照片');return}state.images=state.slides.map((_,i)=>state.uploads[i%state.uploads.length]);cleanReviews.clear();renderPreview();syncCleanReview();toast(`已套用 ${state.uploads.length} 張上傳照片；可逐張下載`) });
 function loadImage(src){return new Promise((resolve,reject)=>{let img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=src})}
-$('#aiBgBtn').addEventListener('click',async()=>{if(!state.slides.length){toast('請先產生腳本');return}let b=$('#aiBgBtn');b.disabled=true;b.textContent='正在生成圖片（付費 API）…';try{let s=state.slides[state.current];let d=await postJSON('/api/image',{prompt:s.image_prompt||s.title,style:styles[state.style].name});state.images[state.current]=await loadImage(d.data_url);renderPreview();toast('AI 背景已套用。中文文字由網站排版，請檢查畫面。')}catch(e){toast('AI 生圖失敗：'+e.message)}finally{b.disabled=false;b.textContent='✦ AI 產生這一張背景'}});
+const cleanReviews=new Map();
+function syncCleanReview(){
+ const i=state.current;
+ $('#cleanReviewedInput').checked=cleanReviews.get(i)===state.images[i]&&!!state.images[i];
+ $('#cleanOutputStatus').textContent=$('#cleanReviewedInput').checked?
+ '本張已人工確認；若重新生成或更換背景，需再次檢查。':
+ '本張尚未完成可見標記人工檢查。AI 生圖可能仍出現雜字或假 LOGO。';
+}
+$('#cleanReviewedInput').addEventListener('change',()=>{
+ if(!state.images[state.current]){
+  $('#cleanReviewedInput').checked=false;toast('請先選擇或生成背景圖片');return;
+ }
+ if($('#cleanReviewedInput').checked)cleanReviews.set(state.current,state.images[state.current]);
+ else cleanReviews.delete(state.current);
+ syncCleanReview();
+});
+function cleanImagePrompt(slide){
+ const base=(slide.image_prompt||slide.title||'精緻編輯攝影背景').trim();
+ return $('#cleanBgInput').checked?
+ base+'\nIMPORTANT: background image ONLY; no lettering, no typography, no words, no glyphs, no numerals, no signatures, no fake brand marks, no graphic stamps, no decorative watermark-like elements. Leave intentional clean negative space for separate website typography. Do not alter or obscure third-party rights marks in existing reference images.':
+ base;
+}
+async function generateCleanBackground(force=false){
+ if(!state.slides.length){toast('請先產生腳本');return}
+ const index=state.current,slide=state.slides[index],btn=force?$('#regenerateCleanBtn'):$('#aiBgBtn');
+ btn.disabled=true;btn.textContent='AI 正在生成背景（付費 API）…';
+ try{
+  const data=await postJSON('/api/image',{prompt:cleanImagePrompt(slide),style:styles[state.style].name});
+  const image=await loadImage(data.data_url);
+  if(state.slides[index]!==slide){toast('分鏡已更換，為避免覆蓋新內容，已取消套用舊圖片');return}
+  state.images[index]=image;cleanReviews.delete(index);
+  if(state.current===index){renderPreview();syncCleanReview()}
+  toast('已生成背景。請目視檢查是否有多餘文字、假 LOGO 或浮水印樣式。');
+ }catch(e){toast('AI 背景生成失敗：'+e.message)}
+ finally{btn.disabled=false;btn.textContent=force?'↻ 重新生成乾淨背景':'✦ AI 產生這一張背景'}
+}
+$('#aiBgBtn').addEventListener('click',()=>generateCleanBackground(false));
+$('#regenerateCleanBtn').addEventListener('click',()=>generateCleanBackground(true));
+$('#removeBgBtn').addEventListener('click',()=>{
+ if(!state.slides.length){toast('請先產生腳本');return}
+ state.images[state.current]=null;cleanReviews.delete(state.current);
+ renderPreview();syncCleanReview();toast('已改用無照片的純色設計背景，保留標題與內文。');
+});
 function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
 function textLines(ctx,text,maxWidth){let output=[];for(let raw of String(text||'').split('\n')){if(!raw){output.push('');continue}let line='';for(let ch of raw){if(ctx.measureText(line+ch).width>maxWidth && line){output.push(line);line=ch}else line+=ch}if(line)output.push(line)}return output}
 function drawCover(ctx,img){let sc=Math.max(1080/img.naturalWidth,1350/img.naturalHeight);let w=img.naturalWidth*sc,h=img.naturalHeight*sc;ctx.drawImage(img,(1080-w)/2,(1350-h)/2,w,h)}
@@ -309,7 +351,7 @@ function drawSlide(canvas,i){
  ctx.restore();
 }
 function renderPreview(){drawSlide($('#previewCanvas'),state.current)}
-function downloadSlide(i){if(!state.slides.length){toast('請先產生腳本');return}if(Array.from((state.slides[i].title||'')+(state.slides[i].body||'')).length>120){toast('這張圖超過120字，請先精簡內容再下載。');return}let canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;drawSlide(canvas,i);canvas.toBlob(blob=>{if(!blob){toast('圖片轉檔失敗');return}let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=`作興趣_IG輪播_${String(i+1).padStart(2,'0')}.png`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)},'image/png')}
+function downloadSlide(i){if(state.images[i]&&cleanReviews.get(i)!==state.images[i])toast('提醒：本張尚未人工檢查可見標記，請確認圖片授權與畫面。');if(!state.slides.length){toast('請先產生腳本');return}if(Array.from((state.slides[i].title||'')+(state.slides[i].body||'')).length>120){toast('這張圖超過120字，請先精簡內容再下載。');return}let canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;drawSlide(canvas,i);canvas.toBlob(blob=>{if(!blob){toast('圖片轉檔失敗');return}let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=`作興趣_IG輪播_${String(i+1).padStart(2,'0')}.png`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)},'image/png')}
 $('#downloadOne').addEventListener('click',()=>downloadSlide(state.current));
 $('#toDownloadBtn').addEventListener('click',()=>{if(!state.slides.length){toast('請先產生腳本');return}activate('download')});$('#backDesignBtn').addEventListener('click',()=>activate('design'));
 function renderExports(){if(state.slides.some(s=>Array.from((s.title||'')+(s.body||'')).length>120)){toast('部分腳本超過120字，請返回編輯後再匯出。');activate('design');return}const root=$('#exportGrid');root.replaceChildren();if(!state.slides.length){root.innerHTML='<div class="empty">目前沒有可下載圖片，請先完成腳本。</div>';return}state.slides.forEach((s,i)=>{let card=document.createElement('div');card.className='export-card';let can=document.createElement('canvas');can.width=1080;can.height=1350;drawSlide(can,i);can.title='點擊圖片即可下載 PNG';can.addEventListener('click',()=>downloadSlide(i));let actions=document.createElement('div');actions.className='export-actions';let label=document.createElement('strong');label.textContent=s.title.slice(0,23);let btn=document.createElement('button');btn.className='primary';btn.textContent='↓ 下載這張';btn.addEventListener('click',()=>downloadSlide(i));actions.append(label,btn);card.append(can,actions);root.appendChild(card)})}
