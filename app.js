@@ -56,6 +56,67 @@ function template(){if($('#contentTypeInput').value==='book_review'){toast('閱�
 $('#templateBtn').addEventListener('click',template);
 // Remove legacy API key from browser storage; no external OpenAI calls remain.
 try{localStorage.removeItem('zuoxing_openai_key_optin_v1')}catch{}
+
+/* Local extractive organizer. Only supplied text is used: no API, fabricated reviews or experiences. */
+const localFieldIds=['materialsInput','readerOpinionsInput','readingNotesInput'];
+const localPrevious=new Map();
+const localEmpty='【資料不足】';
+function localSentences(text){
+ return String(text||'').replace(/\r/g,'').split(/\n+|(?<=[。！？!?；;])(?=[^\n])/u)
+  .map(x=>x.trim().replace(/^[•●\-\d.、．\s]+/u,'').trim()).filter(Boolean);
+}
+function localExtractDetails(force=false){
+ const raw=$('#detailsInput').value.trim(),status=$('#detailsExtractStatus');
+ if(!raw){status.textContent='請先在「主題故事內容／背景資料」貼入可核對的文章內容、書籍介紹或真實紀錄。';return}
+ const rows=localSentences(raw),opinion=[],personal=[],materials=[];
+ let section='',sourceName=$('#sourceTitleInput').value.trim();
+ // Explicit headings are essential for attributing third-party opinion or first-person experience.
+ const headPublic=/^(?:公開讀者(?:分享|觀點|評論|心得)?|讀者(?:分享|評論|心得|觀點)|書評|網友評論|網友分享|他人心得)\s*[：:]/u;
+ const headPersonal=/^(?:個人(?:閱讀)?心得|我(?:的)?(?:閱讀)?心得|本人(?:閱讀)?心得|我的(?:真實)?體驗|親身經歷|個人真實體驗)\s*[：:]/u;
+ const headMaterials=/^(?:重要素材|重點|背景資料|故事背景|內容摘要|書籍介紹|文章摘要|核心觀點)\s*[：:]/u;
+ const headOther=/^(?:來源|參考(?:連結|網址|資料)?|資料日期|核對日期|官方榜單|網址|URL|注意)\s*[：:]/iu;
+ for(const row of rows){
+  const m=row.match(/^([^：:\n]{1,26})\s*[：:]\s*(.*)$/u);
+  const heading=m?.[1]?.trim()||'';
+  let val=m?.[2]?.trim()||'';
+  if(headPublic.test(row)){section='opinion';if(val)opinion.push(val);continue}
+  if(headPersonal.test(row)){section='personal';if(val)personal.push(val);continue}
+  if(headMaterials.test(row)){section='materials';if(val)materials.push(val);continue}
+  if(headOther.test(row)){section='';continue}
+  if(/^(?:https?:\/\/|【資料不足】|注意：目前僅取得)/u.test(row))continue;
+  if(heading && /^(?:評論者|讀者姓名|出處)$/u.test(heading)){continue}
+  if(section==='opinion'){if(row.length>=5)opinion.push(row);continue}
+  if(section==='personal'){if(row.length>=5)personal.push(row);continue}
+  if(row.length>=10&&row.length<=330&&!/^(?:參考書籍|來源|官方榜單|資料日期|核對日期)\s*[:：]/u.test(row))
+   materials.push(row);
+ }
+ const unique=arr=>[...new Set(arr.map(v=>v.trim()).filter(Boolean))];
+ const important=unique(materials).slice(0,6).map(v=>'• '+v.slice(0,190)).join('\n');
+ const opinions=unique(opinion).slice(0,5).map(v=>'• '+v.slice(0,230)).join('\n');
+ const experiences=unique(personal).slice(0,5).map(v=>'• '+v.slice(0,230)).join('\n');
+ const output={
+  materialsInput:important||localEmpty+'背景文字不足以提取具體重點，請補充實際內容。',
+  readerOpinionsInput:opinions? '【由貼入資料整理，讀者身分及來源請人工核實】\n'+opinions+(sourceName?'\n參考來源：'+sourceName:'\n【待補來源】請附上評論原始網址或出處。'):localEmpty+'背景資料沒有明確標示的公開讀者評論，不會推測他人觀點。',
+  readingNotesInput:experiences?'【由貼入資料中明確標示的本人心得整理，請核對】\n'+experiences:localEmpty+'背景資料沒有明確標示的本人閱讀心得／真實體驗，請自行補充，不能由他人評論代填。'
+ };
+ let applied=0,skipped=0;
+ for(const id of localFieldIds){
+  const el=$('#'+id),current=el.value.trim(),last=localPrevious.get(id);
+  if(force||!current||current===last||current.startsWith(localEmpty)||current.startsWith('【由貼入資料')){
+   el.value=output[id];localPrevious.set(id,output[id]);applied++;
+  }else skipped++;
+ }
+ status.textContent='已從貼入文字擷取 '+unique(materials).length+' 項素材、'+unique(opinion).length+' 段標示讀者觀點、'+unique(personal).length+' 段標示本人心得；更新 '+applied+' 欄'+(skipped?'，保留 '+skipped+' 欄手動內容。':'。')+' 無 API 費用。';
+ if(force)toast('已根據背景資料整理三個欄位，資料不足部分已明確標示。');
+}
+$('#extractDetailsBtn').addEventListener('click',()=>localExtractDetails(true));
+let localExtractTimer=null;
+$('#detailsInput').addEventListener('input',()=>{
+ if(!$('#autoExtractDetails').checked)return;
+ clearTimeout(localExtractTimer);
+ localExtractTimer=setTimeout(()=>localExtractDetails(false),500);
+});
+
 let readerRequestSerial=0;
 const AUTO_READER_MARK='【自動整理：公開讀者觀點，非本人閱讀心得】';
 const NO_REVIEW='【資料不足】尚未取得可核對的公開讀者心得正文，不能自行編造讀後感。';
