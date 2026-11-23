@@ -154,7 +154,8 @@ async function fetchReaderResearch(){
   const readerText=renderAutoReviewText(opinions);
   // Fill the three explicitly requested fields while keeping clear provenance and editability.
   $('#materialsInput').value=uniqueMaterialLines(publisher,opinions);
-  $('#readingNotesInput').value=readerText;
+  // 公開讀者評論不得當作使用者本人的閱讀經驗。
+  if(!$('#readingNotesInput').value.trim() || $('#readingNotesInput').value.startsWith('【自動整理：')) $('#readingNotesInput').value='【資料不足】公開讀者評論不是本人閱讀心得；請自行填入真實體驗。';
   $('#readerOpinionsInput').value=readerText;
   const quoted=[];
   if(publisher?.text)quoted.push('【書籍介紹；非原書全文】\n'+publisher.text+'\n來源：'+publisher.source+'\n網址：'+publisher.url);
