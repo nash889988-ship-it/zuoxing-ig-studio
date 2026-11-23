@@ -21,10 +21,11 @@
 <label>主題名稱<input id="topicInput" placeholder="例：閱讀話題｜我的黑道姑姑：教我的99件事"/></label>
 <label>主題內容類型<select id="contentTypeInput"><option value="knowledge">知識整理型</option><option value="book_review">閱讀心得型</option><option value="travel">旅遊攻略型</option><option value="story">故事敘事型</option></select></label>
 <label>主題故事內容／背景資料<textarea id="detailsInput" rows="5" placeholder="貼入官方書籍介紹、可靠摘要、真實體驗或重要背景。請以可核對的原始資料撰寫，不要只依標題編故事。"></textarea></label>
+<div class="local-extract-panel"><button type="button" class="primary" id="extractDetailsBtn">✦ 從背景資料自動整理三個欄位</button><label class="local-extract-option"><input type="checkbox" id="autoExtractDetails" checked/> 輸入或貼上背景資料時自動更新（不覆蓋手動修改）</label><p class="fineprint" id="detailsExtractStatus" aria-live="polite">僅分析上方貼入的文字，不呼叫 OpenAI API；缺少公開評論或本人心得時會明確提示資料不足。</p></div>
 <div class="reader-fetch-bar"><button type="button" class="primary" id="fetchReaderBtn">↻ 自動搜尋並填寫三個欄位</button><span id="readerFetchStatus">選擇書籍後可自動整理公開來源</span></div><div id="readerResults" class="reader-results" hidden></div>
-<label>重要素材／必須涵蓋的重點 <span class="hint-inline">手動填寫，每行一項</span><textarea id="materialsInput" rows="4" placeholder="例如：書籍核心觀點、人物關係、章節摘要、旅遊交通、注意事項…"></textarea></label>
+<label>重要素材／必須涵蓋的重點 <span class="hint-inline">背景資料自動擷取重點，可再編輯</span><textarea id="materialsInput" rows="4" placeholder="例如：書籍核心觀點、人物關係、章節摘要、旅遊交通、注意事項…"></textarea></label>
 <label>公開讀者分享摘要／觀點 <span class="hint-inline">自動整理，非你的親身心得</span><textarea id="readerOpinionsInput" rows="4" placeholder="搜尋後會顯示可擷取的公開讀者分享短摘要，附來源。內容有限時不捏造。"></textarea></label>
-<label>個人閱讀心得／真實體驗 <span class="hint-inline">請自行填入真實心得，並區分公開讀者觀點</span><textarea id="readingNotesInput" rows="4" placeholder="搜尋後自動帶入公開讀者心得摘要並附註非本人。若填寫自己的心得，請清楚取代標記內容。"></textarea></label>
+<label>個人閱讀心得／真實體驗 <span class="hint-inline">請自行填入真實心得，並區分公開讀者觀點</span><textarea id="readingNotesInput" rows="4" placeholder="僅有明確標示為本人經驗的背景文字，才會自動擷取；其他情況請自行填寫。"></textarea></label>
 <div class="source-stack"><label>資料來源名稱（選填）<input id="sourceTitleInput" placeholder="出版社官方介紹、政府公告、實地訪談等"/></label><label>來源網址（選填）<input id="sourceUrlInput" inputType="url" placeholder="https://..."/></label></div>
 <label>來源中可供引用的實際內容 <span class="hint-inline">自動帶入書籍介紹或有來源的公開短摘要</span><textarea id="sourceTextInput" rows="4" placeholder="選取書籍後自動擷取可確認的介紹或公開短摘要，沒有取得文字會明確標示不足。"></textarea></label>
 <div id="extraSources" class="extra-sources"></div><button type="button" class="secondary small" id="addSourceBtn">＋ 新增其他資料來源</button><p class="fineprint">可加入多個出版社介紹、政府公告或查證來源；請貼入來源的實際內容，不要只有網址。</p>
@@ -58,4 +59,4 @@
  </div>
  <p class="fineprint" id="watermarkStatus" role="status"></p>
 </dialog>
-<footer><b>作興趣農場</b><span>IG @interest558855</span><span>官方 LINE @wifi558855</span><a href="https://forinterest.hexa.tw/" target="_blank" rel="noopener noreferrer">訂位網站</a><small>僅供企劃、製圖和下載，不會自動發文。</small></footer><div class="toast" id="toast" role="status" aria-live="polite"></div><script src="/app.js?v=no-openai-1"></script></body></html>
+<footer><b>作興趣農場</b><span>IG @interest558855</span><span>官方 LINE @wifi558855</span><a href="https://forinterest.hexa.tw/" target="_blank" rel="noopener noreferrer">訂位網站</a><small>僅供企劃、製圖和下載，不會自動發文。</small></footer><div class="toast" id="toast" role="status" aria-live="polite"></div><script src="/app.js?v=local-extract-1"></script></body></html>
