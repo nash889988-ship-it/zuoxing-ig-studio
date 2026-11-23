@@ -245,9 +245,9 @@ function renderEditor(){const sel=$('#slideSelect');sel.replaceChildren();state.
 $('#slideSelect').addEventListener('change',()=>{state.current=Number($('#slideSelect').value);renderEditor()});['editTitle','editBody','editImagePrompt'].forEach(id=>$('#'+id).addEventListener('input',()=>{let s=state.slides[state.current];if(!s)return;s.title=$('#editTitle').value;s.body=$('#editBody').value;s.image_prompt=$('#editImagePrompt').value;renderPreview()}));
 $('#prevBtn').addEventListener('click',()=>{state.current=(state.current-1+state.slides.length)%state.slides.length;renderEditor()});$('#nextBtn').addEventListener('click',()=>{state.current=(state.current+1)%state.slides.length;renderEditor()});
 $('#photosInput').addEventListener('change',async e=>{const files=[...e.target.files].filter(f=>f.type.startsWith('image/')).slice(0,15);state.uploads=[];for(let f of files){try{let url=URL.createObjectURL(f);let image=await loadImage(url);state.uploads.push(image)}catch{}}$('#photosStatus').textContent=`已選 ${state.uploads.length} 張照片，僅在本機瀏覽器處理`;toast(`已讀取 ${state.uploads.length} 張照片，按「依序套用上傳照片」即可套用`)});
-$('#applyPhotos').addEventListener('click',()=>{if(!state.slides.length||!state.uploads.length){toast('請先產生腳本並上傳照片');return}state.images=state.slides.map((_,i)=>state.uploads[i%state.uploads.length]);renderPreview();toast(`已套用 ${state.uploads.length} 張上傳照片；可逐張下載`) });
+$('#applyPhotos').addEventListener('click',()=>{if(!state.slides.length||!state.uploads.length){toast('請先產生腳本並上傳照片');return}state.images=state.slides.map((slide,i)=>{watermarkEdits.delete(slide);return state.uploads[i%state.uploads.length]});renderPreview();toast(`已套用 ${state.uploads.length} 張上傳照片；可逐張下載`) });
 function loadImage(src){return new Promise((resolve,reject)=>{let img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=src})}
-$('#aiBgBtn').addEventListener('click',async()=>{if(!state.slides.length){toast('請先產生腳本');return}let b=$('#aiBgBtn');b.disabled=true;b.textContent='正在生成圖片（付費 API）…';try{let s=state.slides[state.current];let d=await postJSON('/api/image',{prompt:s.image_prompt||s.title,style:styles[state.style].name});state.images[state.current]=await loadImage(d.data_url);renderPreview();toast('AI 背景已套用。中文文字由網站排版，請檢查畫面。')}catch(e){toast('AI 生圖失敗：'+e.message)}finally{b.disabled=false;b.textContent='✦ AI 產生這一張背景'}});
+$('#aiBgBtn').addEventListener('click',async()=>{if(!state.slides.length){toast('請先產生腳本');return}let b=$('#aiBgBtn');b.disabled=true;b.textContent='正在生成圖片（付費 API）…';try{const i=state.current,s=state.slides[i],previous=state.images[i];let d=await postJSON('/api/image',{prompt:s.image_prompt||s.title,style:styles[state.style].name});const image=await loadImage(d.data_url);if(state.slides[i]!==s||state.images[i]!==previous)return;watermarkEdits.delete(s);state.images[i]=image;renderPreview();toast('AI 背景已套用。中文文字由網站排版，請檢查畫面。')}catch(e){toast('AI 生圖失敗：'+e.message)}finally{b.disabled=false;b.textContent='✦ AI 產生這一張背景'}});
 function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
 function textLines(ctx,text,maxWidth){let output=[];for(let raw of String(text||'').split('\n')){if(!raw){output.push('');continue}let line='';for(let ch of raw){if(ctx.measureText(line+ch).width>maxWidth && line){output.push(line);line=ch}else line+=ch}if(line)output.push(line)}return output}
 function drawCover(ctx,img){let sc=Math.max(1080/img.naturalWidth,1350/img.naturalHeight);let w=img.naturalWidth*sc,h=img.naturalHeight*sc;ctx.drawImage(img,(1080-w)/2,(1350-h)/2,w,h)}
@@ -259,7 +259,10 @@ function drawSlide(canvas,i){
  const family='"Noto Sans TC","Microsoft JhengHei",Arial,sans-serif';
  ctx.save();ctx.clearRect(0,0,W,H);ctx.fillStyle=style.bg;ctx.fillRect(0,0,W,H);
  if(image){
-  ctx.save();ctx.filter='contrast(1.045) saturate(.93) brightness(.84)';drawCover(ctx,image);ctx.restore();
+  ctx.save();ctx.filter='contrast(1.045) saturate(.93) brightness(.84)';
+  const edit=watermarkEdits.get(slide);
+  if(edit?.image===image)ctx.drawImage(edit.canvas,0,0);
+  else drawCover(ctx,image);ctx.restore();
   const grad=ctx.createLinearGradient(0,0,variant===1?W:H,variant===1?0:H);
   grad.addColorStop(0,'rgba(8,13,13,.08)');grad.addColorStop(.5,'rgba(8,13,13,.24)');
   grad.addColorStop(1,'rgba(8,13,13,.62)');
@@ -308,10 +311,168 @@ function drawSlide(canvas,i){
  const handle='@interest558855';ctx.fillText(handle,1012-ctx.measureText(handle).width,1274);
  ctx.restore();
 }
-function renderPreview(){drawSlide($('#previewCanvas'),state.current)}
+const watermarkEdits=new WeakMap();
+const watermarkDialog=$('#watermarkDialog');
+const watermarkCanvas=$('#watermarkCanvas');
+const selectionCanvas=$('#watermarkSelection');
+const watermarkStatus=$('#watermarkStatus');
+const repairButton=$('#repairWatermark');
+const saveWatermark=$('#saveWatermark');
+let watermarkSession, selection, drag;
+
+function showWatermarkSelection(){
+ const ctx=selectionCanvas.getContext('2d');
+ ctx.clearRect(0,0,selectionCanvas.width,selectionCanvas.height);
+ repairButton.disabled=!selection||selection.w<3||selection.h<3||!!drag;
+ if(!selection)return;
+ const {x,y,w,h}=selection;
+ ctx.fillStyle='rgba(255,226,126,.22)';
+ ctx.fillRect(x,y,w,h);
+ ctx.strokeStyle='#ffe27e';
+ ctx.lineWidth=5;
+ ctx.strokeRect(x,y,w,h);
+}
+
+$('#openWatermark').addEventListener('click',()=>{
+ const i=state.current, slide=state.slides[i], image=state.images[i];
+ if(!slide||!image)return;
+ const edit=watermarkEdits.get(slide);
+ watermarkSession={i,slide,image,repaired:edit?.image===image};
+ const ctx=watermarkCanvas.getContext('2d',{willReadFrequently:true});
+ ctx.clearRect(0,0,watermarkCanvas.width,watermarkCanvas.height);
+ if(watermarkSession.repaired)ctx.drawImage(edit.canvas,0,0);
+ else drawCover(ctx,image);
+ selection=drag=null;
+ showWatermarkSelection();
+ saveWatermark.disabled=true;
+ watermarkStatus.textContent=watermarkSession.repaired?'已載入這張的修補結果。':'';
+ watermarkDialog.showModal();
+});
+
+function watermarkPoint(event){
+ const bounds=selectionCanvas.getBoundingClientRect();
+ return {
+  x:Math.max(0,Math.min(selectionCanvas.width,Math.round((event.clientX-bounds.left)*selectionCanvas.width/bounds.width))),
+  y:Math.max(0,Math.min(selectionCanvas.height,Math.round((event.clientY-bounds.top)*selectionCanvas.height/bounds.height)))
+ };
+}
+
+selectionCanvas.addEventListener('pointerdown',event=>{
+ if(drag||event.button!==0)return;
+ drag={id:event.pointerId,start:watermarkPoint(event)};
+ selection=null;
+ selectionCanvas.setPointerCapture(event.pointerId);
+ showWatermarkSelection();
+});
+
+function updateWatermarkSelection(event){
+ const {x,y}=watermarkPoint(event);
+ const start=drag.start;
+ selection={x:Math.min(start.x,x),y:Math.min(start.y,y),w:Math.abs(start.x-x),h:Math.abs(start.y-y)};
+}
+
+selectionCanvas.addEventListener('pointermove',event=>{
+ if(drag?.id!==event.pointerId)return;
+ updateWatermarkSelection(event);
+ showWatermarkSelection();
+});
+selectionCanvas.addEventListener('pointerup',event=>{
+ if(drag?.id!==event.pointerId)return;
+ updateWatermarkSelection(event);
+ drag=null;
+ showWatermarkSelection();
+});
+selectionCanvas.addEventListener('lostpointercapture',event=>{
+ if(drag?.id!==event.pointerId)return;
+ drag=selection=null;
+ showWatermarkSelection();
+});
+
+// Interpolate between the closest available edges outside the selected rectangle.
+function repairVisibleMark(ctx,{x,y,w,h}){
+ const {width,height}=ctx.canvas;
+ const left=x>0, right=x+w<width, top=y>0, bottom=y+h<height;
+ if(!left&&!right&&!top&&!bottom)return false;
+ const source=ctx.getImageData(0,0,width,height).data;
+ const patch=ctx.createImageData(w,h);
+ for(let row=0;row<h;row++){
+  const py=y+row;
+  const topWeight=top?1/(row+1):0;
+  const bottomWeight=bottom?1/(h-row):0;
+  const leftOffset=(py*width+Math.max(0,x-1))*4;
+  const rightOffset=(py*width+Math.min(width-1,x+w))*4;
+  for(let col=0;col<w;col++){
+   const px=x+col;
+   const leftWeight=left?1/(col+1):0;
+   const rightWeight=right?1/(w-col):0;
+   const topOffset=(Math.max(0,y-1)*width+px)*4;
+   const bottomOffset=(Math.min(height-1,y+h)*width+px)*4;
+   const total=leftWeight+rightWeight+topWeight+bottomWeight;
+   const dest=(row*w+col)*4;
+   for(let channel=0;channel<4;channel++){
+    patch.data[dest+channel]=(
+     source[leftOffset+channel]*leftWeight+source[rightOffset+channel]*rightWeight+
+     source[topOffset+channel]*topWeight+source[bottomOffset+channel]*bottomWeight
+    )/total;
+   }
+  }
+ }
+ ctx.putImageData(patch,x,y);
+ return true;
+}
+
+repairButton.addEventListener('click',()=>{
+ if(!repairVisibleMark(watermarkCanvas.getContext('2d'),selection)){
+  watermarkStatus.textContent='請縮小選區，留下周圍像素供修補。';
+  return;
+ }
+ watermarkSession.repaired=true;
+ selection=null;
+ showWatermarkSelection();
+ saveWatermark.disabled=false;
+ watermarkStatus.textContent='已修補選區。請確認結果後套用。';
+});
+
+$('#resetWatermark').addEventListener('click',()=>{
+ const ctx=watermarkCanvas.getContext('2d');
+ ctx.clearRect(0,0,watermarkCanvas.width,watermarkCanvas.height);
+ drawCover(ctx,watermarkSession.image);
+ watermarkSession.repaired=false;
+ selection=null;
+ showWatermarkSelection();
+ saveWatermark.disabled=false;
+ watermarkStatus.textContent='已預覽原始背景。按「套用到這張」確認還原。';
+});
+$('#cancelWatermark').addEventListener('click',()=>watermarkDialog.close());
+watermarkDialog.addEventListener('close',()=>{if(!watermarkDialog.open)watermarkSession=selection=drag=null});
+saveWatermark.addEventListener('click',()=>{
+ const {i,slide,image,repaired}=watermarkSession;
+ watermarkDialog.close();
+ if(state.slides[i]!==slide||state.images[i]!==image){
+  toast('這張背景已更換，請重新框選。');
+  return;
+ }
+ if(repaired){
+  const canvas=document.createElement('canvas');
+  canvas.width=watermarkCanvas.width;
+  canvas.height=watermarkCanvas.height;
+  canvas.getContext('2d').drawImage(watermarkCanvas,0,0);
+  watermarkEdits.set(slide,{image,canvas});
+ }else watermarkEdits.delete(slide);
+ renderPreview();
+ toast(repaired?'修補已套用，可下載這張 PNG。':'已還原原始背景。');
+});
+
+function renderPreview(){
+ const slide=state.slides[state.current], image=state.images[state.current];
+ $('#openWatermark').disabled=!image;
+ $('#downloadOne').textContent=watermarkEdits.get(slide)?.image===image&&image
+  ?'↓ 下載修補後 PNG':'↓ 下載這張 PNG';
+ drawSlide($('#previewCanvas'),state.current);
+}
 function downloadSlide(i){if(!state.slides.length){toast('請先產生腳本');return}if(Array.from((state.slides[i].title||'')+(state.slides[i].body||'')).length>120){toast('這張圖超過120字，請先精簡內容再下載。');return}let canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;drawSlide(canvas,i);canvas.toBlob(blob=>{if(!blob){toast('圖片轉檔失敗');return}let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=`作興趣_IG輪播_${String(i+1).padStart(2,'0')}.png`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)},'image/png')}
 $('#downloadOne').addEventListener('click',()=>downloadSlide(state.current));
 $('#toDownloadBtn').addEventListener('click',()=>{if(!state.slides.length){toast('請先產生腳本');return}activate('download')});$('#backDesignBtn').addEventListener('click',()=>activate('design'));
-function renderExports(){if(state.slides.some(s=>Array.from((s.title||'')+(s.body||'')).length>120)){toast('部分腳本超過120字，請返回編輯後再匯出。');activate('design');return}const root=$('#exportGrid');root.replaceChildren();if(!state.slides.length){root.innerHTML='<div class="empty">目前沒有可下載圖片，請先完成腳本。</div>';return}state.slides.forEach((s,i)=>{let card=document.createElement('div');card.className='export-card';let can=document.createElement('canvas');can.width=1080;can.height=1350;drawSlide(can,i);can.title='點擊圖片即可下載 PNG';can.addEventListener('click',()=>downloadSlide(i));let actions=document.createElement('div');actions.className='export-actions';let label=document.createElement('strong');label.textContent=s.title.slice(0,23);let btn=document.createElement('button');btn.className='primary';btn.textContent='↓ 下載這張';btn.addEventListener('click',()=>downloadSlide(i));actions.append(label,btn);card.append(can,actions);root.appendChild(card)})}
+function renderExports(){if(state.slides.some(s=>Array.from((s.title||'')+(s.body||'')).length>120)){toast('部分腳本超過120字，請返回編輯後再匯出。');activate('design');return}const root=$('#exportGrid');root.replaceChildren();if(!state.slides.length){root.innerHTML='<div class="empty">目前沒有可下載圖片，請先完成腳本。</div>';return}state.slides.forEach((s,i)=>{let card=document.createElement('div');card.className='export-card';let can=document.createElement('canvas');can.width=1080;can.height=1350;drawSlide(can,i);can.title='點擊圖片即可下載 PNG';can.addEventListener('click',()=>downloadSlide(i));let actions=document.createElement('div');actions.className='export-actions';let label=document.createElement('strong');label.textContent=s.title.slice(0,23);let btn=document.createElement('button');btn.className='primary';btn.textContent=watermarkEdits.has(s)?'↓ 下載修補後 PNG':'↓ 下載這張';btn.addEventListener('click',()=>downloadSlide(i));actions.append(label,btn);card.append(can,actions);root.appendChild(card)})}
 async function status(){try{let r=await fetch('/api/status');let d=await r.json();state.ai=!!d.bring_your_own_key;$('#apiStatus').textContent=state.ai?'AI 腳本可用｜輸入個人 API 金鑰':'模板模式｜無 AI API';}catch{$('#apiStatus').textContent='服務異常，請確認 Python 已啟動'}}
 status();renderPreview();
