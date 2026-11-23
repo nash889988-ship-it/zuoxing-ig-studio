@@ -64,3 +64,23 @@
 .clean-output-panel .action-row{flex-wrap:wrap}
 .clean-output-panel .action-row button{flex:1;min-width:160px;white-space:normal}
 .clean-output-panel .fineprint{margin:0;line-height:1.6}
+
+#watermarkDialog {
+ width: min(620px, calc(100% - 24px));
+ max-height: calc(100% - 24px);
+ border: 1px solid var(--line);
+ border-radius: var(--radius);
+ padding: 16px;
+ color: var(--ink);
+}
+#watermarkDialog::backdrop { background: #10241cc9; }
+#watermarkDialog h3 { margin: 0; }
+#watermarkHelp { font-size: 14px; margin: 8px 0; }
+.watermark-stage {
+ position: relative;
+ width: min(100%, 420px, 43dvh);
+ margin: 12px auto;
+}
+.watermark-stage canvas { display: block; width: 100%; height: auto; }
+#watermarkSelection { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+#watermarkStatus { margin-bottom: 0; }
