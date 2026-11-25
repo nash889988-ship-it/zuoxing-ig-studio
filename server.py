@@ -32,34 +32,53 @@ def get_json(url, headers=None, method=None, data=None, timeout=16):
     with urlopen(r,timeout=timeout) as resp:
         return json.loads(resp.read(5_000_000).decode())
 
+def rss_topics(url, category, platform, cutoff, limit=10):
+    req=Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; ZuoxingResearch/2.0)'})
+    with urlopen(req,timeout=8) as response:
+        root=ET.fromstring(response.read(1_200_000))
+    result=[]
+    for item in root.findall('.//item')[:limit]:
+        title=short_text(item.findtext('title'),200)
+        href=(item.findtext('link') or '').strip()
+        if not title or not href.startswith('https://'):continue
+        date=item.findtext('pubDate') or ''
+        try: dt=parsedate_to_datetime(date).astimezone(timezone.utc)
+        except Exception:continue
+        if dt<cutoff or dt>datetime.now(timezone.utc)+timedelta(days=1):continue
+        source=short_text(item.findtext('source'),100) or platform
+        snippet=short_text(item.findtext('description'),300)
+        # An RSS snippet is a search excerpt, not verified article body or a user review.
+        result.append({'title':title,'category':category,'source':source,'platform':platform,
+             'url':href,'published':dt.isoformat(),'snippet':snippet,'likes':None,
+             'comments':None,'views':None,'kind':platform+' 搜尋摘要（全文未查證）'})
+    return result
+
 def get_news(days=7):
     cutoff=datetime.now(timezone.utc)-timedelta(days=days)
-    entries=[]; errors=[]; seen=set()
+    entries=[]; errors=[]; seen=set(); platform_count={}
+    # Independent search feeds, not social-platform metrics or official article verification.
+    tasks=[]
     for category, query in TOPIC_QUERIES:
-        # These are news-search references, NOT Instagram engagement rankings.
-        url='https://news.google.com/rss/search?q='+quote(query+' when:'+str(days)+'d')+'&hl=zh-TW&gl=TW&ceid=TW:zh-Hant'
-        try:
-            req=Request(url,headers={'User-Agent':'Mozilla/5.0'})
-            with urlopen(req,timeout=10) as r: xml=r.read(1_500_000)
-            root=ET.fromstring(xml)
-            for item in root.findall('.//item')[:12]:
-                title=item.findtext('title') or ''
-                link=item.findtext('link') or ''
-                date=item.findtext('pubDate') or ''
-                source=item.findtext('source') or ''
-                if not title or not link: continue
-                try: dt=parsedate_to_datetime(date).astimezone(timezone.utc)
-                except Exception: continue
-                if dt<cutoff or dt>datetime.now(timezone.utc)+timedelta(days=1): continue
-                k=re.sub(r'\s+','',title).lower()
-                if k in seen:continue
-                seen.add(k)
-                entries.append({'title':title[:240],'category':category,'source':source,'url':link,'published':dt.isoformat(), 'likes':None,'comments':None,'views':None,'kind':'新聞線索（非 IG 貼文）'})
-        except Exception as e:
-            errors.append(f'{category}：{type(e).__name__}（遠端新聞服務暫時無法存取）')
+        g='https://news.google.com/rss/search?q='+quote(query+' when:'+str(days)+'d')+'&hl=zh-TW&gl=TW&ceid=TW:zh-Hant'
+        b='https://www.bing.com/news/search?q='+quote(query)+'&format=rss'
+        tasks.extend([(g,category,'Google News'),(b,category,'Bing News')])
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        jobs={executor.submit(rss_topics,url,cat,platform,cutoff,8):(cat,platform) for url,cat,platform in tasks}
+        for job in as_completed(jobs):
+            cat,platform=jobs[job]
+            try:
+                for item in job.result():
+                    key=re.sub(r'[^\w一-龥]','',item['title']).lower()[:110]
+                    if key in seen:continue
+                    seen.add(key);entries.append(item)
+                    platform_count[platform]=platform_count.get(platform,0)+1
+            except Exception as e:errors.append(cat+'／'+platform+'：'+type(e).__name__)
     entries.sort(key=lambda x:x['published'],reverse=True)
-    return {'updated':datetime.now(timezone.utc).isoformat(),'range_days':days,'topics':entries[:100], 'errors':errors,
-            'notice':'這是近期新聞/官方報導線索，不是 IG 熱門排名；未取得公開貼文互動量時顯示未取得。', 'accounts':[]}
+    return {'updated':datetime.now(timezone.utc).isoformat(),'range_days':days,'topics':entries[:150],
+        'errors':errors[:12],'platforms':platform_count,'accounts':[],
+        'notice':'搜尋來源：Google News、Bing News 聚合報導與來源站名稱；搜尋摘要並非已核實全文，也不是 IG/YouTube 互動量。'}
+
 
 
 class PageMetaParser(HTMLParser):
@@ -262,6 +281,46 @@ def reader_research(payload):
         result['status']='publisher_and_reader_leads' if opinions else 'publisher_only'
     return result
 
+def topic_context(payload):
+    title=short_text(payload.get('title'),180)
+    url=str(payload.get('url') or '').strip()
+    snippet=short_text(payload.get('snippet'),350)
+    category=short_text(payload.get('category'),80)
+    if not title:raise ValueError('請先選擇主題')
+    sources=[];errors=[]
+    if url.startswith('https://'):
+        # An RSS snippet is labeled separately until an original public article is readable.
+        if snippet:
+            sources.append({'title':title,'url':url,'source':short_text(payload.get('source'),90) or '搜尋平台',
+                            'text':snippet,'quality':'搜尋摘要／未核對文章正文'})
+        page=fetch_public_description(url)
+        if page and page.get('description'):
+            sources.insert(0,{'title':page.get('page_title') or title,'url':page['url'],
+                'source':short_text(payload.get('source'),90) or '原始網頁',
+                'text':page['description'],'quality':'公開網頁中繼資料／非正文'})
+    query=title.split(' - ')[0][:75]
+    cutoff=datetime.now(timezone.utc)-timedelta(days=45)
+    feeds=[
+      ('Google News','https://news.google.com/rss/search?q='+quote(query)+'&hl=zh-TW&gl=TW&ceid=TW:zh-Hant'),
+      ('Bing News','https://www.bing.com/news/search?q='+quote(query)+'&format=rss')
+    ]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs=[(p,pool.submit(rss_topics,u,category,p,cutoff,6)) for p,u in feeds]
+        for platform,job in jobs:
+            try:
+                for result in job.result():
+                    summary=short_text(result.get('snippet'),250)
+                    if not summary:continue
+                    if not any(q in result['title'] for q in [query[:6],title[:6]]) and title[:6] not in summary:continue
+                    if any(x['url']==result['url'] for x in sources):continue
+                    sources.append({'title':result['title'],'url':result['url'],'source':result['source'],
+                        'platform':platform,'text':summary,'quality':'跨平台搜尋摘要／未核對文章正文'})
+                    if len(sources)>=6:break
+            except Exception as e:errors.append(platform+' '+type(e).__name__)
+    return {'title':title,'category':category,'sources':sources[:6],
+        'errors':errors,'notice':'只使用公開來源中繼資料與搜尋摘要，未取得完整文章或實際讀者評論，不應推論個人經驗。'}
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT),**kw)
     def do_GET(self):
@@ -271,13 +330,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(200,get_news());return
         return super().do_GET()
     def do_POST(self):
-        if self.path!='/api/reader-research':
+        if self.path not in ('/api/reader-research','/api/topic-context'):
             self.reply(404,{'error':'功能已移除：本站不再提供 OpenAI API 呼叫。'});return
         try:
             length=int(self.headers.get('Content-Length','0'))
             if length<2 or length>12000:raise ValueError('請求資料超出限制')
             payload=json.loads(self.rfile.read(length))
-            self.reply(200,reader_research(payload))
+            self.reply(200,topic_context(payload) if self.path=='/api/topic-context' else reader_research(payload))
         except Exception as e:self.reply(400,{'error':str(e)[:250]})
     def reply(self,status,data):
         body=json.dumps(data,ensure_ascii=False).encode('utf-8')
