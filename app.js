@@ -110,7 +110,7 @@ $('#importBtn').addEventListener('click',()=>{try{let d=JSON.parse($('#importJso
 const baseTitles=['這個露營知識你知道嗎？','先確認環境與氣象','裝備準備這樣分類','孩子的戶外安全重點','營地周遭如何觀察？','飲食、用火與清潔細節','常見錯誤與正確做法','出發前的最後檢查','收藏這份重點清單'];
 const baseBodies=['先確認這個主題的來源與適用情境。資料若尚未查證，請以實際公告為準，不要只憑網路傳聞安排旅程。','出發前查看中央氣象署預報與目的地最新公告。遇豪雨、強風或警戒資訊，應調整或取消行程。','先列睡眠、照明、飲水、保暖和個人衛生用品清單；按孩子年齡、季節與營區規定調整，不必盲目購買裝備。','先劃定孩子可活動的範圍，遠離水域、爐具與車道；戲水時由成人持續在旁看顧，不讓孩子單獨靠近水邊。','觀察地面排水、樹枝、坡度與通道，不在危險邊坡、乾溪床或警示區搭設帳篷；遵守現場管理人員指示。','炊事器具只在通風良好的戶外安全區使用，帳內不可使用炭火及燃燒式爐具；並妥善保存食物與清理垃圾。','常見誤區是把網路推薦當成現場保證。出發前應核對營區開放、道路通行、預約方式與最新注意事項。','將天氣、道路、預訂、裝備和緊急聯絡資訊重新檢查一次；資訊不足的部分，先向管理單位求證。','將這份露營知識收藏起來，也分享給準備帶孩子出遊的朋友。'];
 function template(){if($('#contentTypeInput').value==='book_review'){toast('閱讀書評不能套用露營模板；請在腳本欄位手動撰寫，不要編造書籍內容。');return}let n=Number($('#countInput').value), topic=$('#topicInput').value.trim();if(!topic){toast('請先輸入主題');return}const goal=$('#goalInput').value;state.slides=Array.from({length:n},(_,i)=>({title:i===0?topic.slice(0,25):i===n-1?'下一趟親子旅行，一起出發！':baseTitles[Math.min(i,baseTitles.length-1)],body:i===n-1?goal==='LINE詢問與訂位'?'加入 LINE @wifi558855，詢問露營與訂位資訊。':goal==='增加追蹤'?'追蹤 @interest558855，發現更多南投露營故事。':goal==='留言互動'?'你有哪些露營經驗？歡迎留言和大家分享。':'收藏這份內容，分享給想一起露營的朋友。':baseBodies[Math.min(i,baseBodies.length-1)],image_prompt:topic+'，臺灣露營親子生活自然攝影、無字背景'}));state.images=Array.from({length:n},()=>null);state.current=0;$('#captionInput').value=`🌿 ${topic}\n和家人一起走進南投山林，留下值得記住的時光。\n📩 官賴 @wifi558855\n🔗 訂位 https://forinterest.hexa.tw/`;$('#hashtagsInput').value='#作興趣農場 #南投露營 #親子露營 #露營知識 #親子旅行 #週末去哪玩';$('#scriptMode').textContent='離線模板（可手動編輯）';renderScript();toast('已產生可編輯的模板腳本；請逐張補充真實素材')}
-$('#templateBtn').addEventListener('click',template);
+$('#templateBtn').addEventListener('click',()=>{template();if(state.slides.length)refreshCaption(true)});
 // Remove legacy API key from browser storage; no external OpenAI calls remain.
 try{localStorage.removeItem('zuoxing_openai_key_optin_v1')}catch{}
 
@@ -164,6 +164,8 @@ function localExtractDetails(force=false){
   }else skipped++;
  }
  status.textContent='已從貼入文字擷取 '+unique(materials).length+' 項素材、'+unique(opinion).length+' 段標示讀者觀點、'+unique(personal).length+' 段標示本人心得；更新 '+applied+' 欄'+(skipped?'，保留 '+skipped+' 欄手動內容。':'。')+' 無 API 費用。';
+ if(!$('#expertCommentInput').value.trim())$('#expertCommentInput').value=expertAdvice($('#contentTypeInput').selectedOptions[0]?.textContent||'',$('#topicInput').value,important.length>0);
+ if($('#autoExtractDetails').checked&&applied)refreshCaption(true);
  if(force)toast('已根據背景資料整理三個欄位，資料不足部分已明確標示。');
 }
 $('#extractDetailsBtn').addEventListener('click',()=>localExtractDetails(true));
@@ -263,6 +265,45 @@ function collectExtraSources(){
  })).filter(x=>x.title||x.url||x.verified_text);
 }
 function renderScript(){let root=$('#slideEditor');root.replaceChildren();$('#slideCountText').textContent=state.slides.length+' 張';if(!state.slides.length){root.innerHTML='<div class="empty">尚未建立腳本。</div>';return}state.slides.forEach((s,i)=>{let el=document.createElement('div');el.className='script-item';el.innerHTML=`<div>分鏡 ${i+1} · 編輯排序標記僅在工作台顯示</div><input aria-label="本張標題"/><textarea rows="2" aria-label="本張內容"></textarea><div class="count"></div>`;let [a,b]=[el.querySelector('input'),el.querySelector('textarea')];a.value=s.title;b.value=s.body;let c=el.querySelector('.count');function sync(){s.title=a.value;s.body=b.value;let n=Array.from(s.title+s.body).length;c.textContent=`${n} / 120 字`;(c.style.color=n>120?'#bd4d34':'#78847d');if(state.current===i)renderPreview()}a.addEventListener('input',sync);b.addEventListener('input',sync);sync();root.appendChild(el)})}
+function cleanEditorialLine(value){
+ return String(value||'').replace(/^[-•\s]+/,'').replace(/^來源\s*\d+\s*提及（未核實全文）：/,'')
+ .replace(/【[^】]+】/g,'').trim().slice(0,125);
+}
+function refreshCaption(fromTopic=false){
+ const title=$('#topicInput').value.trim();
+ if(!title){$('#captionStatus').textContent='請先選擇或輸入主題。';return}
+ const raw=$('#materialsInput').value.split('\n').map(cleanEditorialLine)
+  .filter(x=>x.length>=12&&!/^(?:資料不足|待本人|搜尋來源|網址)/.test(x)).slice(0,3);
+ const expert=$('#expertCommentInput').value.split('\n').map(cleanEditorialLine)
+  .filter(x=>x.startsWith('先')||x.startsWith('留意')||x.startsWith('確認')||x.startsWith('優先')||
+   x.startsWith('燃燒')||x.startsWith('親子')||x.startsWith('遵守')||x.startsWith('從')||x.startsWith('天氣')||
+   x.startsWith('營區')||x.startsWith('評估')).slice(0,2);
+ const c=$('#contentTypeInput').value, goal=$('#goalInput').value;
+ const cta=goal==='LINE詢問與訂位'?'有露營需求可透過 LINE @wifi558855 詢問營區資訊。':
+ goal==='增加追蹤'?'追蹤 @interest558855，持續收藏親子戶外實用資訊。':
+ goal==='留言互動'?'你會優先確認哪一點？歡迎留言分享。':
+ '先收藏這份查核提醒，規劃下一趟出遊時再確認。';
+ const lead=c==='book_review'?'📚 閱讀觀點｜':c==='travel'?'🌿 出遊前先看｜':'🏕️ 戶外知識整理｜';
+ const sections=[lead+title,raw.length?'【目前可查到的摘要重點】\n'+raw.map((x,i)=>(i+1)+'｜'+x).join('\n'):
+ '【資訊限制】目前尚無足夠的公開正文內容，不能只憑標題判斷實際情況。'];
+ if(expert.length)sections.push('【作興趣農場專家提醒】\n'+expert.join('\n'));
+ sections.push('來源資訊與日期請見原始連結；搜尋摘要非完整報導，發布前請再次核對。',cta,
+  'IG｜@interest558855');
+ $('#captionInput').value=sections.join('\n\n');
+ let tags=['#作興趣農場','#戶外生活'];
+ if(c==='book_review')tags=['#作興趣農場','#閱讀分享','#讀書筆記','#好書推薦'];
+ else if(/親子|小孩|兒童/.test(title))tags.push('#親子戶外','#親子旅行');
+ else if(/南投|竹山|埔里|魚池/.test(title))tags.push('#南投旅遊','#南投景點');
+ else if(/安全|防火|用火|一氧化碳/.test(title))tags.push('#露營安全','#戶外安全');
+ else if(/步道|登山|山林/.test(title))tags.push('#山林教育','#步道旅行');
+ else tags.push('#露營知識','#親子露營');
+ if(c==='travel'&&!tags.includes('#台灣旅遊'))tags.push('#台灣旅遊');
+ if(c==='knowledge'&&!tags.includes('#知識分享'))tags.push('#知識分享');
+ $('#hashtagsInput').value=[...new Set(tags)].slice(0,6).join(' ');
+ $('#captionStatus').textContent='依 '+raw.length+' 條來源摘要與 '+expert.length+' 條專家提醒產出；未核對事項已標示。'+(fromTopic?' 選題後自動填入。':'');
+ if(!fromTopic)toast('貼文和 Hashtag 已根據目前可查資料重新編排。');
+}
+$('#refreshCaptionBtn').addEventListener('click',()=>refreshCaption(false));
 $('#copyCaptionBtn').addEventListener('click',async()=>{let text=$('#captionInput').value+'\n\n'+$('#hashtagsInput').value;try{await navigator.clipboard.writeText(text);toast('已複製貼文與 Hashtag')}catch{toast('瀏覽器限制剪貼簿，請手動選取文案複製')}});
 $('#toDesignBtn').addEventListener('click',()=>{if(!state.slides.length){toast('請先產生輪播腳本');return}activate('design')});
 const pick=$('#stylePicker');Object.entries(styles).forEach(([id,s])=>{let b=document.createElement('button');b.className='style-swatch'+(state.style===id?' selected':'');b.style.background=s.bg;b.style.color=s.fg;b.innerHTML=`<strong>${esc(s.name)}</strong><span>故事開始</span>`;b.addEventListener('click',()=>{state.style=id;$$('.style-swatch').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');renderPreview()});pick.appendChild(b)});
