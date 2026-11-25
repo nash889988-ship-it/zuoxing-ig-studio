@@ -321,6 +321,38 @@ def topic_context(payload):
     return {'title':title,'category':category,'sources':sources[:6],
         'errors':errors,'notice':'只使用公開來源中繼資料與搜尋摘要，未取得完整文章或實際讀者評論，不應推論個人經驗。'}
 
+def article_review(payload):
+    """Create an extractive, clearly attributed editorial reading note from a public article."""
+    url=str(payload.get('url') or '').strip()
+    if not url:raise ValueError('請先選取文章或貼入原始文章 HTTPS 網址')
+    article=read_selected_article(url)
+    text=article['text']
+    # Preserve article wording and avoid inventing claims or faux personal experience.
+    blocks=[short_text(x,260) for x in text.split('\\n')]
+    blocks=[x for x in blocks if len(x)>=35 and not re.search(r'訂閱|廣告|分享至|相關新聞|延伸閱讀|版權所有',x)]
+    if len(blocks)<2:raise ValueError('文章正文不足以可靠整理心得，請更換可公開閱讀的原始網址')
+    keywords=('安全','親子','家庭','露營','營地','環境','山林','步道','天氣','交通','教育','活動','預約','管理')
+    scored=sorted(enumerate(blocks),key=lambda item:(-sum(2 for k in keywords if k in item[1]), item[0]))
+    indices=sorted(i for i,_ in scored[:min(4,len(scored))])
+    excerpts=[blocks[i][:145] for i in indices]
+    topic=' '.join(excerpts)
+    if re.search('火源|一氧化碳|安全|風險|事故',topic):
+        perspective='從營區管理與親子安全的角度，這類資訊值得特別留意。實際行動前應查核現場規範、風險條件及最新公告。'
+    elif re.search('環境|生態|步道|山林|保育',topic):
+        perspective='從戶外教育與環境友善的角度，除了關注文章事件，也值得思考如何減少活動對自然環境的干擾。實地規劃前仍須確認管制資訊。'
+    elif re.search('親子|孩子|家庭|教育',topic):
+        perspective='從親子戶外活動的角度，這些內容提醒我們留意孩子年齡、陪同安排及安全邊界；具體做法需要依現場條件評估。'
+    else:
+        perspective='從作興趣農場的戶外實務角度，閱讀這篇文章的價值在於辨識重要資訊與適用條件，而非只看標題作判斷；發布或規劃前應再核對原始來源。'
+    note='【作興趣農場專家閱讀觀察｜依實際取得的文章正文整理，非本人親身經歷】\\n'
+    note+='文章提及的重點包括：\\n'+'\\n'.join('• '+p for p in excerpts[:3])
+    note+='\\n\\n閱讀後的專業思考：'+perspective
+    note+='\\n\\n【來源】'+(article['title'] or '公開文章')+'\\n'+article['url']
+    return {'status':'ready','url':article['url'],'title':article['title'],
+      'extracted_chars':article['extracted_chars'],'materials':excerpts,
+      'review':note,'source_summary':'\\n'.join('• '+x for x in excerpts),
+      'note':'擷取到可讀 HTML 正文後才整理，以上為來源摘錄與規則式編輯觀察；非生成式 AI，非個人閱讀經驗，也未驗證文章全部主張。'}
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT),**kw)
     def do_GET(self):
@@ -330,13 +362,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(200,get_news());return
         return super().do_GET()
     def do_POST(self):
-        if self.path not in ('/api/reader-research','/api/topic-context'):
+        if self.path not in ('/api/reader-research','/api/topic-context','/api/article-review'):
             self.reply(404,{'error':'功能已移除：本站不再提供 OpenAI API 呼叫。'});return
         try:
             length=int(self.headers.get('Content-Length','0'))
             if length<2 or length>12000:raise ValueError('請求資料超出限制')
             payload=json.loads(self.rfile.read(length))
-            self.reply(200,topic_context(payload) if self.path=='/api/topic-context' else reader_research(payload))
+            self.reply(200,article_review(payload) if self.path=='/api/article-review' else topic_context(payload) if self.path=='/api/topic-context' else reader_research(payload))
         except Exception as e:self.reply(400,{'error':str(e)[:250]})
     def reply(self,status,data):
         body=json.dumps(data,ensure_ascii=False).encode('utf-8')
