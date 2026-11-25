@@ -109,7 +109,35 @@ $('#researchBtn').addEventListener('click',async()=>{const b=$('#researchBtn');b
 $('#importBtn').addEventListener('click',()=>{try{let d=JSON.parse($('#importJson').value);let ts=(Array.isArray(d.topics)?d.topics:[]).map(x=>({...x,kind:'使用者匯入（待人工查證）'})).map(x=>safeResearchItem(x,'topics')).filter(Boolean);let ac=(Array.isArray(d.accounts)?d.accounts:[]).filter(x=>/^@[\w.]{1,40}$/.test(String(x.handle||''))&&linkOk(x.url)).map(x=>({...x,title:x.handle,kind:'使用者匯入（非IG排名）'})).map(x=>safeResearchItem(x,'accounts')).filter(Boolean);state.topics=[...ts,...state.topics].slice(0,80);state.accounts=ac.slice(0,10);syncResearchFilters();renderResearch();toast(`匯入 ${ts.length} 則議題、${ac.length} 個帳號；請自行核對來源`)}catch(e){toast('JSON 格式有誤：'+e.message)}});
 const baseTitles=['這個露營知識你知道嗎？','先確認環境與氣象','裝備準備這樣分類','孩子的戶外安全重點','營地周遭如何觀察？','飲食、用火與清潔細節','常見錯誤與正確做法','出發前的最後檢查','收藏這份重點清單'];
 const baseBodies=['先確認這個主題的來源與適用情境。資料若尚未查證，請以實際公告為準，不要只憑網路傳聞安排旅程。','出發前查看中央氣象署預報與目的地最新公告。遇豪雨、強風或警戒資訊，應調整或取消行程。','先列睡眠、照明、飲水、保暖和個人衛生用品清單；按孩子年齡、季節與營區規定調整，不必盲目購買裝備。','先劃定孩子可活動的範圍，遠離水域、爐具與車道；戲水時由成人持續在旁看顧，不讓孩子單獨靠近水邊。','觀察地面排水、樹枝、坡度與通道，不在危險邊坡、乾溪床或警示區搭設帳篷；遵守現場管理人員指示。','炊事器具只在通風良好的戶外安全區使用，帳內不可使用炭火及燃燒式爐具；並妥善保存食物與清理垃圾。','常見誤區是把網路推薦當成現場保證。出發前應核對營區開放、道路通行、預約方式與最新注意事項。','將天氣、道路、預訂、裝備和緊急聯絡資訊重新檢查一次；資訊不足的部分，先向管理單位求證。','將這份露營知識收藏起來，也分享給準備帶孩子出遊的朋友。'];
-function template(){if($('#contentTypeInput').value==='book_review'){toast('閱讀書評不能套用露營模板；請在腳本欄位手動撰寫，不要編造書籍內容。');return}let n=Number($('#countInput').value), topic=$('#topicInput').value.trim();if(!topic){toast('請先輸入主題');return}const goal=$('#goalInput').value;state.slides=Array.from({length:n},(_,i)=>({title:i===0?topic.slice(0,25):i===n-1?'下一趟親子旅行，一起出發！':baseTitles[Math.min(i,baseTitles.length-1)],body:i===n-1?goal==='LINE詢問與訂位'?'加入 LINE @wifi558855，詢問露營與訂位資訊。':goal==='增加追蹤'?'追蹤 @interest558855，發現更多南投露營故事。':goal==='留言互動'?'你有哪些露營經驗？歡迎留言和大家分享。':'收藏這份內容，分享給想一起露營的朋友。':baseBodies[Math.min(i,baseBodies.length-1)],image_prompt:topic+'，臺灣露營親子生活自然攝影、無字背景'}));state.images=Array.from({length:n},()=>null);state.current=0;$('#captionInput').value=`🌿 ${topic}\n和家人一起走進南投山林，留下值得記住的時光。\n📩 官賴 @wifi558855\n🔗 訂位 https://forinterest.hexa.tw/`;$('#hashtagsInput').value='#作興趣農場 #南投露營 #親子露營 #露營知識 #親子旅行 #週末去哪玩';$('#scriptMode').textContent='離線模板（可手動編輯）';renderScript();toast('已產生可編輯的模板腳本；請逐張補充真實素材')}
+function template(){
+ const topic=$('#topicInput').value.trim(),n=Number($('#countInput').value)||7;
+ if(!topic){toast('請先選擇或輸入主題');return}
+ const sourceLines=$('#materialsInput').value.split('\n').map(x=>x.replace(/^[\s•\-]+/,'').trim())
+  .filter(x=>x.length>=15&&!x.startsWith('【資料不足】')).slice(0,6);
+ const expertLines=$('#expertCommentInput').value.split('\n').map(x=>x.replace(/^[\s•\-]+/,'').trim())
+  .filter(x=>x.length>=12&&!x.startsWith('【')).slice(0,3);
+ const goal=$('#goalInput').value;
+ const cta=goal==='LINE詢問與訂位'?'有露營需求可透過 LINE @wifi558855 詢問。':
+ goal==='增加追蹤'?'追蹤 @interest558855，查看更多親子戶外資訊。':
+ goal==='留言互動'?'你怎麼看？留言分享你的經驗。':'收藏這篇提醒，發布前記得核對原始來源。';
+ const slides=[{title:topic.slice(0,35),body:'整理來源摘要與作興趣農場專家實務提醒；搜尋線索不等於已核實全文。'}];
+ for(const [i,line] of sourceLines.entries()){
+  slides.push({title:'重點 '+(i+1)+'｜來源摘要',body:line.slice(0,88)});
+ }
+ for(const [i,line] of expertLines.entries()){
+  slides.push({title:'作興趣農場專家提醒 '+(i+1),body:line.slice(0,90)});
+ }
+ while(slides.length<n-1){
+  slides.push({title:'發布前要確認的事',body:'對照來源原文與日期、適用條件及官方公告；缺乏可核實資料時不應作肯定結論。'});
+ }
+ const chosen=slides.slice(0,n-1);
+ chosen.push({title:'重點整理｜收藏這篇',body:cta});
+ state.slides=chosen.map(x=>({...x,image_prompt:''}));
+ state.images=Array.from({length:n},()=>null);state.current=0;
+ $('#scriptMode').textContent='來源摘要與專家建議｜離線可編輯';
+ renderScript();refreshCaption(true);
+ toast('已依來源摘要和專家建議建立 '+n+' 張分鏡；請核對來源再發布。');
+}
 $('#templateBtn').addEventListener('click',()=>{template();if(state.slides.length)refreshCaption(true)});
 // Remove legacy API key from browser storage; no external OpenAI calls remain.
 try{localStorage.removeItem('zuoxing_openai_key_optin_v1')}catch{}
