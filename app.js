@@ -43,13 +43,70 @@ function renderBooks(){
 }
 renderBooks();
 function resetEditorialForNewTopic(){readerRequestSerial++;state.slides=[];state.images=[];state.current=0;$('#captionInput').value='';$('#hashtagsInput').value='';$('#verificationNotice').hidden=true;$('#extraSources').replaceChildren();$('#readerOpinionsInput').value='';$('#readingNotesInput').value='';$('#readerResults').replaceChildren();$('#readerResults').hidden=true;$('#readerFetchStatus').textContent='選擇書籍後可自動整理公開來源';$('#scriptMode').textContent='新主題｜待生成';renderScript()}
-function selectTopic(item){resetEditorialForNewTopic();$('#topicInput').value=item.title||item.handle||'';$('#contentTypeInput').value=/旅遊|景點|步道|活動|南投/.test(item.category||'')?'travel':'knowledge';$('#detailsInput').value=`來源：${item.source||item.source_url||'使用者提供'}\n資料日期：${formatTime(item.published||item.observed_at)}\n參考連結：${item.url||''}\n請補充來源內文或可查證的事實，AI 不會僅憑標題猜測。`;$('#sourceTitleInput').value=item.source||'';$('#sourceUrlInput').value=item.url||'';$('#sourceTextInput').value='';$('#materialsInput').value='';$('#readingNotesInput').value='';activate('write');toast('已選主題與來源。請閱讀原文，將內容手動填入重點與來源欄位。')}
+let topicContextSerial=0;
+function expertAdvice(category,title,hasSources){
+ const c=category+' '+title;
+ const points=/安全|防火|一氧化碳|爐|火/.test(c)?
+ ['燃燒式爐具不可在帳篷內使用，並確認通風與設備規範。','親子出遊請先約定遠離火源、車道與水邊的安全動線。']:
+ /生態|環境|山林|步道/.test(c)?
+ ['先確認步道開放與管制公告，依天候及同行者體能調整行程。','遵守無痕山林原則，不餵食野生動物並將垃圾帶走。']:
+ /親子|家庭|兒童/.test(c)?
+ ['確認營區動線與衛生飲水設施，依孩子年齡調整活動。','留意夜間溫差、照明與備用保暖用品。']:
+ /旅遊|景點|活動|南投/.test(c)?
+ ['優先核對官方開放時間、交通管制與預約規定。','天氣、價格與名額可能變動，出發前再次向官方確認。']:
+ ['留意內容日期、消息來源與適用條件，避免把轉載當成現場保證。','從安全、親子友善與環境責任角度提出可執行的檢查項目。'];
+ return '【作興趣農場專家觀點｜一般實務建議，非本人親身體驗】\n'+points.map(x=>'• '+x).join('\n')+
+ (hasSources?'\n【查核提醒】上述為專家一般建議，不代表已驗證所選文章所有主張。':'\n【查核提醒】目前沒有可用正文，不能據此斷言該主題的事件細節。');
+}
+async function selectTopic(item){
+ resetEditorialForNewTopic();const serial=++topicContextSerial;
+ const headline=String(item.title||item.handle||'');
+ $('#topicInput').value=headline;
+ $('#contentTypeInput').value=/旅遊|景點|步道|活動|南投/.test(item.category||'')?'travel':'knowledge';
+ $('#detailsInput').value='主題：'+headline+'\n搜尋來源：'+(item.platform||item.source||'使用者匯入')+
+ '\n資料日期：'+formatTime(item.published||item.observed_at)+'\n參考連結：'+(item.url||'');
+ $('#sourceTitleInput').value=item.source||'';$('#sourceUrlInput').value=item.url||'';
+ $('#sourceTextInput').value='';$('#materialsInput').value='';
+ $('#readerOpinionsInput').value='';$('#readingNotesInput').value='';$('#expertCommentInput').value='';
+ activate('write');
+ $('#detailsExtractStatus').textContent='正在比對跨來源公開摘要；搜尋結果不等於已讀取文章全文。';
+ try{
+  const response=await fetch('/api/topic-context',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({title:headline,category:item.category||'',source:item.source||'',url:item.url||'',snippet:item.snippet||''})});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'搜尋服務失敗');
+  if(serial!==topicContextSerial)return;
+  const sources=(data.sources||[]).filter(x=>x.text&&x.url);
+  const passages=sources.slice(0,5).map((x,i)=>'【來源 '+(i+1)+'｜'+(x.source||'未註明')+'｜'+x.quality+'】\n'+x.text+'\n網址：'+x.url);
+  $('#detailsInput').value='主題：'+headline+'\n'+(passages.join('\n\n')||'【資料不足】目前只有搜尋標題，請人工核對原文。');
+  $('#materialsInput').value=sources.length?sources.slice(0,5).map((x,i)=>'• 來源 '+(i+1)+' 提及（未核實全文）：'+x.text.slice(0,165)).join('\n'):'【資料不足】未取得可供核對的摘要或正文。';
+  $('#sourceTitleInput').value=sources[0]?.source||item.source||'';
+  $('#sourceUrlInput').value=sources[0]?.url||item.url||'';
+  $('#sourceTextInput').value=passages.length?'【搜尋摘要或公開中繼資料，非經核對的文章全文】\n'+passages.join('\n\n'):'【資料不足】尚未取得可引用的原文內容。';
+  $('#readerOpinionsInput').value='【資料不足】跨平台新聞搜尋不等於實際公開讀者評論；尚無可核實評論正文。';
+  $('#readingNotesInput').value='【待本人填寫】未取得你的親身經歷，不會編造個人心得。';
+  $('#expertCommentInput').value=expertAdvice(item.category||'',headline,sources.length>0);
+  refreshCaption(true);
+  $('#detailsExtractStatus').textContent='取得 '+sources.length+' 則跨來源短摘要，已自動整理；公開評論與本人心得仍需獨立來源。';
+  toast('已帶入來源摘要、實務建議與 IG 貼文；正式發布前請核對。');
+ }catch(error){
+  if(serial!==topicContextSerial)return;
+  $('#materialsInput').value='【資料不足】只有搜尋標題，請開啟原文補充事實。';
+  $('#readerOpinionsInput').value='【資料不足】沒有可核實的公開評論。';
+  $('#readingNotesInput').value='【待本人填寫】請補充親身經驗。';
+  $('#expertCommentInput').value=expertAdvice(item.category||'',headline,false);
+  refreshCaption(true);
+  $('#detailsExtractStatus').textContent='搜尋暫不可用：'+error.message+'。已提供一般建議，並標註查核限制。';
+ }
+}
 function safeResearchItem(item,type){if(!item||typeof item!=='object')return null;let u=type==='accounts'?item.url:item.url; if(!linkOk(u))return null;const o={...item};o.title=String(o.title||o.handle||'未命名').slice(0,220);o.category=String(o.category||'未分類').slice(0,40);o.url=u;o.source=String(o.source||o.source_url||'來源未提供').slice(0,130);['likes','views','comments'].forEach(k=>{if(!Number.isFinite(o[k])||o[k]<0)o[k]=null});return o}
-function renderResearch(){const topicFilter=$('#topicFilter').value;let topics=state.topics.filter(t=>topicFilter==='all'||t.category===topicFilter);$('#topicNum').textContent=state.topics.length;$('#accountNum').textContent=state.accounts.length;const tc=$('#topicCards');tc.replaceChildren();if(!topics.length){tc.innerHTML='<div class="empty">目前沒有符合類別的已取得資料。可更新新聞線索或匯入有來源的資料。</div>'}topics.slice(0,40).forEach(item=>tc.appendChild(createCard(item,false)));const ac=$('#accountCards');ac.replaceChildren();if(!state.accounts.length)ac.innerHTML='<div class="empty">目前無法取得可核實的每週帳號觀察值。請匯入具來源的 IG 帳號資料，不會憑空湊滿十個。</div>';state.accounts.slice(0,10).forEach(item=>ac.appendChild(createCard(item,true)))}
+function renderResearch(){const topicFilter=$('#topicFilter').value,platformFilter=$('#platformFilter').value;let topics=state.topics.filter(t=>(topicFilter==='all'||t.category===topicFilter)&&(platformFilter==='all'||(t.platform||'使用者匯入')===platformFilter));$('#topicNum').textContent=state.topics.length;$('#accountNum').textContent=state.accounts.length;const tc=$('#topicCards');tc.replaceChildren();if(!topics.length){tc.innerHTML='<div class="empty">目前沒有符合類別的已取得資料。可更新新聞線索或匯入有來源的資料。</div>'}topics.slice(0,40).forEach(item=>tc.appendChild(createCard(item,false)));const ac=$('#accountCards');ac.replaceChildren();if(!state.accounts.length)ac.innerHTML='<div class="empty">目前無法取得可核實的每週帳號觀察值。請匯入具來源的 IG 帳號資料，不會憑空湊滿十個。</div>';state.accounts.slice(0,10).forEach(item=>ac.appendChild(createCard(item,true)))}
 function createCard(item,isAccount){const card=document.createElement('article');card.className='research-card';const published=item.published||item.observed_at;const source=item.source||item.source_url||'來源未註明';const tag=isAccount?'可驗證參考帳號（非排行）':(item.kind||'來源線索（非 IG 排名）');card.innerHTML=`<span class="pill">${esc(item.category||'露營')}</span><h3>${esc(item.title)}</h3><div class="meta">${esc(tag)}<br>資料日期：${esc(formatTime(published))}<br>來源：${esc(source)}</div><div class="metrics">公開互動量｜按讚 ${metric(item.likes)} · 留言 ${metric(item.comments)} · 觀看 ${metric(item.views)}</div><div class="card-actions"><button class="secondary">＋ 選這個主題</button><a rel="noopener noreferrer" target="_blank">查看來源 ↗</a></div>`;card.querySelector('a').href=item.url;card.querySelector('button').addEventListener('click',()=>selectTopic(item));return card}
 $('#topicFilter').addEventListener('change',renderResearch);
-$('#researchBtn').addEventListener('click',async()=>{const b=$('#researchBtn');b.disabled=true;b.textContent='正在讀取可驗證線索…';try{let r=await fetch('/api/research');let data=await r.json();if(!r.ok)throw Error(data.error||'讀取失敗');state.topics=(data.topics||[]).map(x=>safeResearchItem(x,'topics')).filter(Boolean);state.accounts=[];renderResearch();$('#researchDate').textContent='資料抓取：'+formatTime(data.updated)+'｜最近7天';toast(state.topics.length?`找到 ${state.topics.length} 則近期新聞線索（不是IG排名）`:(data.errors||[]).join('；')||'本次沒有取得有效線索，可手動匯入');}catch(e){toast('研究服務暫時無法連線：'+e.message)}finally{b.disabled=false;b.textContent='↻ 更新近 7 天資料'}});
-$('#importBtn').addEventListener('click',()=>{try{let d=JSON.parse($('#importJson').value);let ts=(Array.isArray(d.topics)?d.topics:[]).map(x=>({...x,kind:'使用者匯入（待人工查證）'})).map(x=>safeResearchItem(x,'topics')).filter(Boolean);let ac=(Array.isArray(d.accounts)?d.accounts:[]).filter(x=>/^@[\w.]{1,40}$/.test(String(x.handle||''))&&linkOk(x.url)).map(x=>({...x,title:x.handle,kind:'使用者匯入（非IG排名）'})).map(x=>safeResearchItem(x,'accounts')).filter(Boolean);state.topics=[...ts,...state.topics].slice(0,80);state.accounts=ac.slice(0,10);renderResearch();toast(`匯入 ${ts.length} 則議題、${ac.length} 個帳號；請自行核對來源`)}catch(e){toast('JSON 格式有誤：'+e.message)}});
+$('#platformFilter').addEventListener('change',renderResearch);
+function syncResearchFilters(){for(const [id,values] of [['topicFilter',[...new Set(state.topics.map(x=>x.category).filter(Boolean))]],['platformFilter',[...new Set(state.topics.map(x=>x.platform||'使用者匯入'))]]]){const el=$('#'+id),before=el.value;el.replaceChildren();const all=document.createElement('option');all.value='all';all.textContent=id==='topicFilter'?'全部類別':'全部來源';el.append(all);for(const value of values.sort()){const opt=document.createElement('option');opt.value=value;opt.textContent=value;el.append(opt)}el.value=values.includes(before)?before:'all'}}
+
+$('#researchBtn').addEventListener('click',async()=>{const b=$('#researchBtn');b.disabled=true;b.textContent='正在讀取可驗證線索…';try{let r=await fetch('/api/research');let data=await r.json();if(!r.ok)throw Error(data.error||'讀取失敗');state.topics=(data.topics||[]).map(x=>safeResearchItem(x,'topics')).filter(Boolean);state.accounts=[];syncResearchFilters();renderResearch();$('#researchDate').textContent='資料抓取：'+formatTime(data.updated)+'｜最近7天｜來源：'+Object.keys(data.platforms||{}).join('、');toast(state.topics.length?`找到 ${state.topics.length} 則近期新聞線索（不是IG排名）`:(data.errors||[]).join('；')||'本次沒有取得有效線索，可手動匯入');}catch(e){toast('研究服務暫時無法連線：'+e.message)}finally{b.disabled=false;b.textContent='↻ 跨平台搜尋近 7 天'}});
+$('#importBtn').addEventListener('click',()=>{try{let d=JSON.parse($('#importJson').value);let ts=(Array.isArray(d.topics)?d.topics:[]).map(x=>({...x,kind:'使用者匯入（待人工查證）'})).map(x=>safeResearchItem(x,'topics')).filter(Boolean);let ac=(Array.isArray(d.accounts)?d.accounts:[]).filter(x=>/^@[\w.]{1,40}$/.test(String(x.handle||''))&&linkOk(x.url)).map(x=>({...x,title:x.handle,kind:'使用者匯入（非IG排名）'})).map(x=>safeResearchItem(x,'accounts')).filter(Boolean);state.topics=[...ts,...state.topics].slice(0,80);state.accounts=ac.slice(0,10);syncResearchFilters();renderResearch();toast(`匯入 ${ts.length} 則議題、${ac.length} 個帳號；請自行核對來源`)}catch(e){toast('JSON 格式有誤：'+e.message)}});
 const baseTitles=['這個露營知識你知道嗎？','先確認環境與氣象','裝備準備這樣分類','孩子的戶外安全重點','營地周遭如何觀察？','飲食、用火與清潔細節','常見錯誤與正確做法','出發前的最後檢查','收藏這份重點清單'];
 const baseBodies=['先確認這個主題的來源與適用情境。資料若尚未查證，請以實際公告為準，不要只憑網路傳聞安排旅程。','出發前查看中央氣象署預報與目的地最新公告。遇豪雨、強風或警戒資訊，應調整或取消行程。','先列睡眠、照明、飲水、保暖和個人衛生用品清單；按孩子年齡、季節與營區規定調整，不必盲目購買裝備。','先劃定孩子可活動的範圍，遠離水域、爐具與車道；戲水時由成人持續在旁看顧，不讓孩子單獨靠近水邊。','觀察地面排水、樹枝、坡度與通道，不在危險邊坡、乾溪床或警示區搭設帳篷；遵守現場管理人員指示。','炊事器具只在通風良好的戶外安全區使用，帳內不可使用炭火及燃燒式爐具；並妥善保存食物與清理垃圾。','常見誤區是把網路推薦當成現場保證。出發前應核對營區開放、道路通行、預約方式與最新注意事項。','將天氣、道路、預訂、裝備和緊急聯絡資訊重新檢查一次；資訊不足的部分，先向管理單位求證。','將這份露營知識收藏起來，也分享給準備帶孩子出遊的朋友。'];
 function template(){if($('#contentTypeInput').value==='book_review'){toast('閱讀書評不能套用露營模板；請在腳本欄位手動撰寫，不要編造書籍內容。');return}let n=Number($('#countInput').value), topic=$('#topicInput').value.trim();if(!topic){toast('請先輸入主題');return}const goal=$('#goalInput').value;state.slides=Array.from({length:n},(_,i)=>({title:i===0?topic.slice(0,25):i===n-1?'下一趟親子旅行，一起出發！':baseTitles[Math.min(i,baseTitles.length-1)],body:i===n-1?goal==='LINE詢問與訂位'?'加入 LINE @wifi558855，詢問露營與訂位資訊。':goal==='增加追蹤'?'追蹤 @interest558855，發現更多南投露營故事。':goal==='留言互動'?'你有哪些露營經驗？歡迎留言和大家分享。':'收藏這份內容，分享給想一起露營的朋友。':baseBodies[Math.min(i,baseBodies.length-1)],image_prompt:topic+'，臺灣露營親子生活自然攝影、無字背景'}));state.images=Array.from({length:n},()=>null);state.current=0;$('#captionInput').value=`🌿 ${topic}\n和家人一起走進南投山林，留下值得記住的時光。\n📩 官賴 @wifi558855\n🔗 訂位 https://forinterest.hexa.tw/`;$('#hashtagsInput').value='#作興趣農場 #南投露營 #親子露營 #露營知識 #親子旅行 #週末去哪玩';$('#scriptMode').textContent='離線模板（可手動編輯）';renderScript();toast('已產生可編輯的模板腳本；請逐張補充真實素材')}
