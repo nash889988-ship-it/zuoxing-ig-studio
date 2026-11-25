@@ -328,7 +328,7 @@ def article_review(payload):
     article=read_selected_article(url)
     text=article['text']
     # Preserve article wording and avoid inventing claims or faux personal experience.
-    blocks=[short_text(x,260) for x in text.split('\\n')]
+    blocks=[short_text(x,260) for x in text.split('\n')]
     blocks=[x for x in blocks if len(x)>=35 and not re.search(r'訂閱|廣告|分享至|相關新聞|延伸閱讀|版權所有',x)]
     if len(blocks)<2:raise ValueError('文章正文不足以可靠整理心得，請更換可公開閱讀的原始網址')
     keywords=('安全','親子','家庭','露營','營地','環境','山林','步道','天氣','交通','教育','活動','預約','管理')
@@ -344,13 +344,13 @@ def article_review(payload):
         perspective='從親子戶外活動的角度，這些內容提醒我們留意孩子年齡、陪同安排及安全邊界；具體做法需要依現場條件評估。'
     else:
         perspective='從作興趣農場的戶外實務角度，閱讀這篇文章的價值在於辨識重要資訊與適用條件，而非只看標題作判斷；發布或規劃前應再核對原始來源。'
-    note='【作興趣農場專家閱讀觀察｜依實際取得的文章正文整理，非本人親身經歷】\\n'
-    note+='文章提及的重點包括：\\n'+'\\n'.join('• '+p for p in excerpts[:3])
-    note+='\\n\\n閱讀後的專業思考：'+perspective
-    note+='\\n\\n【來源】'+(article['title'] or '公開文章')+'\\n'+article['url']
+    note='【作興趣農場專家閱讀觀察｜依實際取得的文章正文整理，非本人親身經歷】\n'
+    note+='文章提及的重點包括：\n'+'\n'.join('• '+p for p in excerpts[:3])
+    note+='\n\n閱讀後的專業思考：'+perspective
+    note+='\n\n【來源】'+(article['title'] or '公開文章')+'\n'+article['url']
     return {'status':'ready','url':article['url'],'title':article['title'],
       'extracted_chars':article['extracted_chars'],'materials':excerpts,
-      'review':note,'source_summary':'\\n'.join('• '+x for x in excerpts),
+      'review':note,'source_summary':'\n'.join('• '+x for x in excerpts),
       'note':'擷取到可讀 HTML 正文後才整理，以上為來源摘錄與規則式編輯觀察；非生成式 AI，非個人閱讀經驗，也未驗證文章全部主張。'}
 
 class Handler(SimpleHTTPRequestHandler):
