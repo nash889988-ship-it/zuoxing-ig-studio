@@ -65,7 +65,7 @@ async function selectTopic(item){
  $('#contentTypeInput').value=/旅遊|景點|步道|活動|南投/.test(item.category||'')?'travel':'knowledge';
  $('#detailsInput').value='主題：'+headline+'\n搜尋來源：'+(item.platform||item.source||'使用者匯入')+
  '\n資料日期：'+formatTime(item.published||item.observed_at)+'\n參考連結：'+(item.url||'');
- $('#sourceTitleInput').value=item.source||'';$('#sourceUrlInput').value=item.url||'';
+ $('#sourceTitleInput').value=item.source||'';$('#sourceUrlInput').value=item.url||'';$('#reviewArticleUrl').value=item.url||'';
  $('#sourceTextInput').value='';$('#materialsInput').value='';
  $('#readerOpinionsInput').value='';$('#readingNotesInput').value='';$('#expertCommentInput').value='';
  activate('write');
@@ -87,7 +87,8 @@ async function selectTopic(item){
   $('#expertCommentInput').value=expertAdvice(item.category||'',headline,sources.length>0);
   refreshCaption(true);
   $('#detailsExtractStatus').textContent='取得 '+sources.length+' 則跨來源短摘要，已自動整理；公開評論與本人心得仍需獨立來源。';
-  toast('已帶入來源摘要、實務建議與 IG 貼文；正式發布前請核對。');
+  toast('已帶入來源摘要，現在嘗試閱讀所選文章正文。');
+  if($('#reviewArticleUrl').value.startsWith('https://'))await reviewSelectedArticle(true);
  }catch(error){
   if(serial!==topicContextSerial)return;
   $('#materialsInput').value='【資料不足】只有搜尋標題，請開啟原文補充事實。';
@@ -98,6 +99,38 @@ async function selectTopic(item){
   $('#detailsExtractStatus').textContent='搜尋暫不可用：'+error.message+'。已提供一般建議，並標註查核限制。';
  }
 }
+let articleReviewSerial=0;
+async function reviewSelectedArticle(automatic=false){
+ const url=$('#reviewArticleUrl').value.trim(),btn=$('#reviewArticleBtn'),status=$('#reviewArticleStatus');
+ if(!url.startsWith('https://')){status.textContent='請提供原始文章 HTTPS 網址。';if(!automatic)toast(status.textContent);return}
+ const serial=++articleReviewSerial,topic=$('#topicInput').value;
+ btn.disabled=true;btn.textContent='正在讀取文章正文…';
+ status.textContent='正在從所選網址讀取可公開取得的文章正文；只有讀取成功才會寫心得。';
+ try{
+  const response=await fetch('/api/article-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+  const result=await response.json();if(!response.ok)throw Error(result.error||'文章無法讀取');
+  if(serial!==articleReviewSerial||topic!==$('#topicInput').value||url!==$('#reviewArticleUrl').value.trim())return;
+  if(result.status!=='ready'||!result.review||!result.materials?.length)throw Error('文章內容不足，未更新欄位');
+  $('#materialsInput').value=result.materials.map(x=>'• 文章提及：'+x).join('\n');
+  $('#expertCommentInput').value=result.review;
+  $('#sourceTitleInput').value=result.title||'所選文章';
+  $('#sourceUrlInput').value=result.url;
+  $('#sourceTextInput').value='【從文章正文擷取的短段落；不是全文】\n'+result.source_summary+'\n原文：'+result.url;
+  // Reflection derived from reading a third-party article must not impersonate the user's personal experience.
+  $('#readingNotesInput').value='【文章閱讀觀察，非本人真實體驗】\n'+result.review;
+  $('#readerOpinionsInput').value='【資料不足】文章內容不等於多位讀者的公開評論；請另附實際評論來源。';
+  status.textContent='已讀取可見正文 '+result.extracted_chars+' 字，整理出 '+result.materials.length+' 項重點及來源心得。'+result.note;
+  refreshCaption(true);
+  toast('已依實際擷取的文章正文寫出專家閱讀觀察，請發布前對照原文。');
+ }catch(error){
+  if(serial!==articleReviewSerial||topic!==$('#topicInput').value)return;
+  status.textContent='未能讀取文章正文：'+error.message+'。原本欄位未被覆蓋。請貼上原始文章網址，或將文章內容貼入背景資料。';
+  if(!automatic)toast('文章讀取失敗：'+error.message);
+ }finally{
+  if(serial===articleReviewSerial){btn.disabled=false;btn.textContent='✦ 讀取文章全文並產生專家閱讀心得'}
+ }
+}
+$('#reviewArticleBtn').addEventListener('click',()=>reviewSelectedArticle(false));
 function safeResearchItem(item,type){if(!item||typeof item!=='object')return null;let u=type==='accounts'?item.url:item.url; if(!linkOk(u))return null;const o={...item};o.title=String(o.title||o.handle||'未命名').slice(0,220);o.category=String(o.category||'未分類').slice(0,40);o.url=u;o.source=String(o.source||o.source_url||'來源未提供').slice(0,130);['likes','views','comments'].forEach(k=>{if(!Number.isFinite(o[k])||o[k]<0)o[k]=null});return o}
 function renderResearch(){const topicFilter=$('#topicFilter').value,platformFilter=$('#platformFilter').value;let topics=state.topics.filter(t=>(topicFilter==='all'||t.category===topicFilter)&&(platformFilter==='all'||(t.platform||'使用者匯入')===platformFilter));$('#topicNum').textContent=state.topics.length;$('#accountNum').textContent=state.accounts.length;const tc=$('#topicCards');tc.replaceChildren();if(!topics.length){tc.innerHTML='<div class="empty">目前沒有符合類別的已取得資料。可更新新聞線索或匯入有來源的資料。</div>'}topics.slice(0,40).forEach(item=>tc.appendChild(createCard(item,false)));const ac=$('#accountCards');ac.replaceChildren();if(!state.accounts.length)ac.innerHTML='<div class="empty">目前無法取得可核實的每週帳號觀察值。請匯入具來源的 IG 帳號資料，不會憑空湊滿十個。</div>';state.accounts.slice(0,10).forEach(item=>ac.appendChild(createCard(item,true)))}
 function createCard(item,isAccount){const card=document.createElement('article');card.className='research-card';const published=item.published||item.observed_at;const source=item.source||item.source_url||'來源未註明';const tag=isAccount?'可驗證參考帳號（非排行）':(item.kind||'來源線索（非 IG 排名）');card.innerHTML=`<span class="pill">${esc(item.category||'露營')}</span><h3>${esc(item.title)}</h3><div class="meta">${esc(tag)}<br>資料日期：${esc(formatTime(published))}<br>來源：${esc(source)}</div><div class="metrics">公開互動量｜按讚 ${metric(item.likes)} · 留言 ${metric(item.comments)} · 觀看 ${metric(item.views)}</div><div class="card-actions"><button class="secondary">＋ 選這個主題</button><a rel="noopener noreferrer" target="_blank">查看來源 ↗</a></div>`;card.querySelector('a').href=item.url;card.querySelector('button').addEventListener('click',()=>selectTopic(item));return card}
